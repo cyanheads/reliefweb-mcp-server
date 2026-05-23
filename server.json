@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "reliefweb-mcp-server",
-  "description": "",
+  "name": "cyanheads/reliefweb-mcp-server",
+  "description": "MCP server for the ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
   "repository": {
-    "url": "",
+    "url": "https://github.com/cyanheads/reliefweb-mcp-server",
     "source": "github"
   },
   "version": "0.1.0",
