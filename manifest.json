@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "reliefweb-mcp-server",
   "version": "0.1.0",
-  "description": "",
-  "author": { "name": "" },
+  "description": "MCP server for the ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
+  "author": { "name": "cyanheads" },
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -13,7 +13,8 @@
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "RELIEFWEB_APP_NAME": "${RELIEFWEB_APP_NAME}"
       }
     }
   },
@@ -22,5 +23,12 @@
   },
   "tools_generated": true,
   "prompts_generated": true,
-  "user_config": {}
+  "user_config": {
+    "RELIEFWEB_APP_NAME": {
+      "type": "string",
+      "title": "ReliefWeb App Name",
+      "description": "Pre-approved appname for the ReliefWeb API v2. Register at https://reliefweb.int/help/api.",
+      "required": true
+    }
+  }
 }

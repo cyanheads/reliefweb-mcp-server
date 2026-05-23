@@ -1,7 +1,7 @@
 {
-  "name": "reliefweb-mcp-server",
+  "name": "@cyanheads/reliefweb-mcp-server",
   "version": "0.1.0",
-  "description": "",
+  "description": "MCP server for the ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,10 +37,20 @@
     "start:stdio": "MCP_TRANSPORT_TYPE=stdio node dist/index.js",
     "start:http": "MCP_TRANSPORT_TYPE=http node dist/index.js"
   },
-  "keywords": ["mcp", "mcp-server", "model-context-protocol"],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "reliefweb",
+    "humanitarian",
+    "disasters",
+    "humanitarian-aid",
+    "ocha",
+    "crisis-data"
+  ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/cyanheads/reliefweb-mcp-server"
   },
   "license": "Apache-2.0",
   "engines": {
