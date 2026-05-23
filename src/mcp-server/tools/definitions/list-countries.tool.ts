@@ -12,7 +12,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
     'List all countries and territories tracked by ReliefWeb, optionally filtered to active humanitarian situations. ' +
     'Returns ISO3 codes and status for each entry — use the ISO3 code with reliefweb_get_country to fetch a full profile. ' +
     'Set crisis_only=true to limit results to countries with active humanitarian situations.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     crisis_only: z
       .boolean()
@@ -41,24 +41,26 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
   output: z.object({
     items: z
       .array(
-        z.object({
-          id: z.number().describe('ReliefWeb numeric country ID.'),
-          name: z.string().describe('Country or territory name.'),
-          iso3: z
-            .string()
-            .optional()
-            .describe('ISO 3166-1 alpha-3 code for use with reliefweb_get_country.'),
-          status: z
-            .string()
-            .optional()
-            .describe(
-              'Humanitarian situation status. Active situations have status alert or current.',
-            ),
-          urlAlias: z
-            .string()
-            .optional()
-            .describe('Canonical ReliefWeb URL for this country page.'),
-        }),
+        z
+          .object({
+            id: z.number().describe('ReliefWeb numeric country ID.'),
+            name: z.string().describe('Country or territory name.'),
+            iso3: z
+              .string()
+              .optional()
+              .describe('ISO 3166-1 alpha-3 code for use with reliefweb_get_country.'),
+            status: z
+              .string()
+              .optional()
+              .describe(
+                'Humanitarian situation status. Active situations have status alert or current.',
+              ),
+            urlAlias: z
+              .string()
+              .optional()
+              .describe('Canonical ReliefWeb URL for this country page.'),
+          })
+          .describe('A country or territory tracked by ReliefWeb.'),
       )
       .describe('Countries tracked by ReliefWeb.'),
     totalCount: z.number().describe('Total countries matching the filter before pagination.'),

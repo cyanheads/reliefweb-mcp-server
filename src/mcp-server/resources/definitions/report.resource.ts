@@ -20,7 +20,7 @@ export const reportResource = resource('reliefweb://reports/{id}', {
 
   async handler(params, ctx) {
     const id = parseInt(params.id, 10);
-    if (isNaN(id) || id <= 0) {
+    if (Number.isNaN(id) || id <= 0) {
       throw notFound(`Invalid report ID "${params.id}". Must be a positive integer.`);
     }
     ctx.log.debug('reliefweb://reports/{id}', { id });

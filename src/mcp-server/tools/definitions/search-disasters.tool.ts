@@ -4,7 +4,6 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
@@ -14,7 +13,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     'Default preset covers alert, current, and past disasters. ' +
     'Use include_archived=true to include alert-archive and archive entries for historical research. ' +
     'Returns IDs suitable for use with reliefweb_get_disaster and as disaster_id filter in reliefweb_search_reports.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
@@ -85,25 +84,27 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
   output: z.object({
     items: z
       .array(
-        z.object({
-          id: z.number().describe('ReliefWeb numeric disaster ID.'),
-          name: z.string().describe('Disaster name.'),
-          status: z
-            .string()
-            .optional()
-            .describe('Disaster status (alert, current, past, archive).'),
-          glide: z.string().optional().describe('GLIDE number for cross-system correlation.'),
-          dateEvent: z.string().optional().describe('Event date (ISO 8601), when available.'),
-          dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
-          primaryCountry: z.string().optional().describe('Primary affected country.'),
-          countries: z
-            .array(z.string())
-            .optional()
-            .describe('All countries tagged on this disaster.'),
-          types: z.array(z.string()).optional().describe('Disaster type names.'),
-          primaryType: z.string().optional().describe('Primary disaster type.'),
-          urlAlias: z.string().optional().describe('Canonical ReliefWeb URL for this disaster.'),
-        }),
+        z
+          .object({
+            id: z.number().describe('ReliefWeb numeric disaster ID.'),
+            name: z.string().describe('Disaster name.'),
+            status: z
+              .string()
+              .optional()
+              .describe('Disaster status (alert, current, past, archive).'),
+            glide: z.string().optional().describe('GLIDE number for cross-system correlation.'),
+            dateEvent: z.string().optional().describe('Event date (ISO 8601), when available.'),
+            dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
+            primaryCountry: z.string().optional().describe('Primary affected country.'),
+            countries: z
+              .array(z.string())
+              .optional()
+              .describe('All countries tagged on this disaster.'),
+            types: z.array(z.string()).optional().describe('Disaster type names.'),
+            primaryType: z.string().optional().describe('Primary disaster type.'),
+            urlAlias: z.string().optional().describe('Canonical ReliefWeb URL for this disaster.'),
+          })
+          .describe('A matching disaster record.'),
       )
       .describe('Matching disasters.'),
     totalCount: z.number().describe('Total disasters matching the query before pagination.'),
@@ -114,16 +115,6 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
         'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
       ),
   }),
-  errors: [
-    {
-      reason: 'not_found',
-      code: JsonRpcErrorCode.NotFound,
-      when: 'No disasters matched the query.',
-      recovery:
-        'Try removing or broadening the filters. Check the country code and disaster type spelling.',
-    },
-  ],
-
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_disasters', {
       text: input.text,

@@ -4,7 +4,6 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reliefwebSearchTraining = tool('reliefweb_search_training', {
@@ -14,7 +13,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
     'Covers workshops, e-learning, conferences, and other capacity-building events. ' +
     'Training date fields use date.start / date.end — different from report date fields. ' +
     'Use date_start_from and date_start_to to find upcoming training within a window.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
@@ -76,29 +75,34 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
   output: z.object({
     items: z
       .array(
-        z.object({
-          id: z.number().describe('ReliefWeb numeric training ID.'),
-          title: z.string().describe('Training title.'),
-          dateStart: z.string().optional().describe('Training start date (ISO 8601).'),
-          dateEnd: z.string().optional().describe('Training end date (ISO 8601).'),
-          dateRegistration: z.string().optional().describe('Registration deadline (ISO 8601).'),
-          sources: z
-            .array(z.string())
-            .optional()
-            .describe('Organizing organizations (short names).'),
-          countries: z.array(z.string()).optional().describe('Countries tagged on this training.'),
-          themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
-          formats: z.array(z.string()).optional().describe('Training format names.'),
-          languages: z.array(z.string()).optional().describe('Language codes (ISO 639-1).'),
-          careerCategories: z
-            .array(z.string())
-            .optional()
-            .describe('Career category names (humanitarian tracks).'),
-          urlAlias: z
-            .string()
-            .optional()
-            .describe('Canonical ReliefWeb URL for this training listing.'),
-        }),
+        z
+          .object({
+            id: z.number().describe('ReliefWeb numeric training ID.'),
+            title: z.string().describe('Training title.'),
+            dateStart: z.string().optional().describe('Training start date (ISO 8601).'),
+            dateEnd: z.string().optional().describe('Training end date (ISO 8601).'),
+            dateRegistration: z.string().optional().describe('Registration deadline (ISO 8601).'),
+            sources: z
+              .array(z.string())
+              .optional()
+              .describe('Organizing organizations (short names).'),
+            countries: z
+              .array(z.string())
+              .optional()
+              .describe('Countries tagged on this training.'),
+            themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
+            formats: z.array(z.string()).optional().describe('Training format names.'),
+            languages: z.array(z.string()).optional().describe('Language codes (ISO 639-1).'),
+            careerCategories: z
+              .array(z.string())
+              .optional()
+              .describe('Career category names (humanitarian tracks).'),
+            urlAlias: z
+              .string()
+              .optional()
+              .describe('Canonical ReliefWeb URL for this training listing.'),
+          })
+          .describe('A matching training opportunity.'),
       )
       .describe('Matching training opportunities.'),
     totalCount: z
@@ -111,16 +115,6 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
         'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
       ),
   }),
-  errors: [
-    {
-      reason: 'not_found',
-      code: JsonRpcErrorCode.NotFound,
-      when: 'No training listings matched the query.',
-      recovery:
-        'Try broader keywords, remove date range filters, or check the format and career category spelling.',
-    },
-  ],
-
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_training', {
       text: input.text,

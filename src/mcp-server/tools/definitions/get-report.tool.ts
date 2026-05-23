@@ -13,7 +13,7 @@ export const reliefwebGetReport = tool('reliefweb_get_report', {
     'Fetch a single ReliefWeb report by its numeric ID with full body text, file attachments, and all metadata. ' +
     'Use after reliefweb_search_reports to retrieve document content — body is excluded from search results to manage context budget. ' +
     'Report bodies can be 10–100KB; call this only when you need the full document text.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
       .number()

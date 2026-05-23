@@ -4,7 +4,6 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
@@ -13,7 +12,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
     'Search humanitarian job listings on ReliefWeb by country, organization, career category, theme, and experience level. ' +
     'Returns current open positions — archived or expired jobs are excluded by default. ' +
     'Use text search for role titles and job descriptions.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
@@ -70,22 +69,30 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
   output: z.object({
     items: z
       .array(
-        z.object({
-          id: z.number().describe('ReliefWeb numeric job ID.'),
-          title: z.string().describe('Job title.'),
-          dateCreated: z.string().optional().describe('Date this job was indexed (ISO 8601).'),
-          dateClosing: z.string().optional().describe('Application closing date (ISO 8601).'),
-          sources: z.array(z.string()).optional().describe('Hiring organizations (short names).'),
-          countries: z.array(z.string()).optional().describe('Countries tagged on this job.'),
-          themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
-          types: z.array(z.string()).optional().describe('Job type names.'),
-          careerCategories: z
-            .array(z.string())
-            .optional()
-            .describe('Career category names (humanitarian tracks).'),
-          experienceLevels: z.array(z.string()).optional().describe('Required experience levels.'),
-          urlAlias: z.string().optional().describe('Canonical ReliefWeb URL for this job listing.'),
-        }),
+        z
+          .object({
+            id: z.number().describe('ReliefWeb numeric job ID.'),
+            title: z.string().describe('Job title.'),
+            dateCreated: z.string().optional().describe('Date this job was indexed (ISO 8601).'),
+            dateClosing: z.string().optional().describe('Application closing date (ISO 8601).'),
+            sources: z.array(z.string()).optional().describe('Hiring organizations (short names).'),
+            countries: z.array(z.string()).optional().describe('Countries tagged on this job.'),
+            themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
+            types: z.array(z.string()).optional().describe('Job type names.'),
+            careerCategories: z
+              .array(z.string())
+              .optional()
+              .describe('Career category names (humanitarian tracks).'),
+            experienceLevels: z
+              .array(z.string())
+              .optional()
+              .describe('Required experience levels.'),
+            urlAlias: z
+              .string()
+              .optional()
+              .describe('Canonical ReliefWeb URL for this job listing.'),
+          })
+          .describe('A matching job listing.'),
       )
       .describe('Matching job listings.'),
     totalCount: z.number().describe('Total jobs matching the query before pagination.'),
@@ -96,16 +103,6 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
         'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
       ),
   }),
-  errors: [
-    {
-      reason: 'not_found',
-      code: JsonRpcErrorCode.NotFound,
-      when: 'No job listings matched the query.',
-      recovery:
-        'Try different keywords, broader career categories, or remove the country and organization filters.',
-    },
-  ],
-
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_jobs', {
       text: input.text,

@@ -13,7 +13,7 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
     'Fetch a disaster record by ReliefWeb numeric ID including description, affected countries, GLIDE number, ' +
     'profile overview, key content links, and active appeals or response plans. ' +
     'Use after reliefweb_search_disasters to retrieve full details.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
       .number()
@@ -40,29 +40,35 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
       .describe('Profile overview text from the ReliefWeb editorial team.'),
     keyContent: z
       .array(
-        z.object({
-          title: z.string().describe('Link title.'),
-          url: z.string().describe('Link URL.'),
-        }),
+        z
+          .object({
+            title: z.string().describe('Link title.'),
+            url: z.string().describe('Link URL.'),
+          })
+          .describe('A curated key content link.'),
       )
       .optional()
       .describe('Curated key content links from the ReliefWeb editorial team.'),
     appealsResponsePlans: z
       .array(
-        z.object({
-          title: z.string().describe('Appeal or response plan title.'),
-          url: z.string().describe('Link URL.'),
-          date: z.string().optional().describe('Publication date.'),
-        }),
+        z
+          .object({
+            title: z.string().describe('Appeal or response plan title.'),
+            url: z.string().describe('Link URL.'),
+            date: z.string().optional().describe('Publication date.'),
+          })
+          .describe('An appeal or response plan entry.'),
       )
       .optional()
       .describe('Active appeals and response plans linked to this disaster.'),
     usefulLinks: z
       .array(
-        z.object({
-          title: z.string().describe('Link title.'),
-          url: z.string().describe('Link URL.'),
-        }),
+        z
+          .object({
+            title: z.string().describe('Link title.'),
+            url: z.string().describe('Link URL.'),
+          })
+          .describe('A useful external link.'),
       )
       .optional()
       .describe('Useful external links curated by ReliefWeb editors.'),

@@ -103,16 +103,11 @@ interface DateRangeValue {
 }
 
 export class ReliefWebService {
-  // Config and storage are passed for future use (caching, rate limiting).
+  // Config and storage reserved for future use (caching, rate limiting).
   // Currently only getServerConfig() is needed for the appname.
-  constructor(
-    private readonly appConfig: AppConfig,
-    private readonly storage: StorageService,
-  ) {
+  constructor(_appConfig: AppConfig, _storage: StorageService) {
     // Eagerly validate the appname at construction time so errors surface in setup().
     getServerConfig();
-    void this.appConfig;
-    void this.storage;
   }
 
   // ─── Internal fetch ──────────────────────────────────────────────────────────
@@ -321,8 +316,8 @@ export class ReliefWebService {
       const values = params.status
         .split(',')
         .map((s) => s.trim())
-        .filter((s): s is string => s.length > 0);
-      const statusValue: string | string[] = values.length === 1 ? (values[0] as string) : values;
+        .filter((s) => s.length > 0);
+      const statusValue = values.length === 1 ? (values[0] ?? values) : values;
       conditions.push({ field: 'status', value: statusValue });
     }
     if (params.glide) conditions.push({ field: 'glide', value: params.glide });
@@ -588,19 +583,21 @@ function normalizeDisasterDetail(f: RawDisasterFields, id: number): DisasterDeta
   if (f.description) r.description = f.description;
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
   if (f.profile?.key_content?.length) {
-    r.keyContent = f.profile.key_content
-      .filter((kc) => kc.title && kc.url)
-      .map((kc) => ({ title: kc.title!, url: kc.url! }));
+    r.keyContent = f.profile.key_content.flatMap((kc) =>
+      kc.title && kc.url ? [{ title: kc.title, url: kc.url }] : [],
+    );
   }
   if (f.profile?.appeals_response_plans?.length) {
-    r.appealsResponsePlans = f.profile.appeals_response_plans
-      .filter((ap) => ap.title && ap.url)
-      .map((ap) => ({ title: ap.title!, url: ap.url!, ...(ap.date ? { date: ap.date } : {}) }));
+    r.appealsResponsePlans = f.profile.appeals_response_plans.flatMap((ap) =>
+      ap.title && ap.url
+        ? [{ title: ap.title, url: ap.url, ...(ap.date ? { date: ap.date } : {}) }]
+        : [],
+    );
   }
   if (f.profile?.useful_links?.length) {
-    r.usefulLinks = f.profile.useful_links
-      .filter((ul) => ul.title && ul.url)
-      .map((ul) => ({ title: ul.title!, url: ul.url! }));
+    r.usefulLinks = f.profile.useful_links.flatMap((ul) =>
+      ul.title && ul.url ? [{ title: ul.title, url: ul.url }] : [],
+    );
   }
   return r;
 }
@@ -618,19 +615,21 @@ function normalizeCountryDetail(f: RawCountryFields, id: number): CountryDetail 
   const r: CountryDetail = { ...summary };
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
   if (f.profile?.key_content?.length) {
-    r.keyContent = f.profile.key_content
-      .filter((kc) => kc.title && kc.url)
-      .map((kc) => ({ title: kc.title!, url: kc.url! }));
+    r.keyContent = f.profile.key_content.flatMap((kc) =>
+      kc.title && kc.url ? [{ title: kc.title, url: kc.url }] : [],
+    );
   }
   if (f.profile?.appeals_response_plans?.length) {
-    r.appealsResponsePlans = f.profile.appeals_response_plans
-      .filter((ap) => ap.title && ap.url)
-      .map((ap) => ({ title: ap.title!, url: ap.url!, ...(ap.date ? { date: ap.date } : {}) }));
+    r.appealsResponsePlans = f.profile.appeals_response_plans.flatMap((ap) =>
+      ap.title && ap.url
+        ? [{ title: ap.title, url: ap.url, ...(ap.date ? { date: ap.date } : {}) }]
+        : [],
+    );
   }
   if (f.profile?.useful_links?.length) {
-    r.usefulLinks = f.profile.useful_links
-      .filter((ul) => ul.title && ul.url)
-      .map((ul) => ({ title: ul.title!, url: ul.url! }));
+    r.usefulLinks = f.profile.useful_links.flatMap((ul) =>
+      ul.title && ul.url ? [{ title: ul.title, url: ul.url }] : [],
+    );
   }
   return r;
 }

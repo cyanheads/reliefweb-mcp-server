@@ -4,7 +4,6 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import type { FilterCondition } from '@/services/reliefweb/types.js';
 
@@ -16,7 +15,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     'Report body is excluded from results (10–100KB each); call get_report when document content is needed. ' +
     'Use preset include_archived=true to include expired or archived reports in historical research. ' +
     'Note: each call counts against the 1,000 calls/day quota.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
@@ -80,7 +79,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         'Include archived and to-review content in addition to published. Uses preset=analysis. Off by default.',
       ),
     filter: z
-      .unknown()
+      .record(z.string(), z.unknown())
       .optional()
       .describe(
         'Raw ReliefWeb filter object for compound conditions not covered by named params. Example: {"operator": "AND", "conditions": [{"field": "format.name", "value": "Map"}, {"field": "language.code", "value": "fr"}]}.',
@@ -106,33 +105,35 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
   output: z.object({
     items: z
       .array(
-        z.object({
-          id: z.number().describe('ReliefWeb numeric report ID.'),
-          title: z.string().describe('Report title.'),
-          dateOriginal: z.string().optional().describe('Source publication date (ISO 8601).'),
-          dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
-          primaryCountry: z.string().optional().describe('Primary country name for this report.'),
-          countries: z
-            .array(z.string())
-            .optional()
-            .describe('All countries tagged on this report.'),
-          sources: z
-            .array(z.string())
-            .optional()
-            .describe('Publishing organizations (short names).'),
-          formats: z.array(z.string()).optional().describe('Content format names.'),
-          themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
-          languages: z.array(z.string()).optional().describe('Language codes (ISO 639-1).'),
-          urlAlias: z.string().optional().describe('Canonical ReliefWeb URL for this report.'),
-          fileUrls: z
-            .array(z.string())
-            .optional()
-            .describe('Direct file download URLs attached to this report.'),
-          headlineSummary: z
-            .string()
-            .optional()
-            .describe('Short editorial summary from the headline block, when present.'),
-        }),
+        z
+          .object({
+            id: z.number().describe('ReliefWeb numeric report ID.'),
+            title: z.string().describe('Report title.'),
+            dateOriginal: z.string().optional().describe('Source publication date (ISO 8601).'),
+            dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
+            primaryCountry: z.string().optional().describe('Primary country name for this report.'),
+            countries: z
+              .array(z.string())
+              .optional()
+              .describe('All countries tagged on this report.'),
+            sources: z
+              .array(z.string())
+              .optional()
+              .describe('Publishing organizations (short names).'),
+            formats: z.array(z.string()).optional().describe('Content format names.'),
+            themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
+            languages: z.array(z.string()).optional().describe('Language codes (ISO 639-1).'),
+            urlAlias: z.string().optional().describe('Canonical ReliefWeb URL for this report.'),
+            fileUrls: z
+              .array(z.string())
+              .optional()
+              .describe('Direct file download URLs attached to this report.'),
+            headlineSummary: z
+              .string()
+              .optional()
+              .describe('Short editorial summary from the headline block, when present.'),
+          })
+          .describe('A matching report summary.'),
       )
       .describe('Matching reports (summaries only — use reliefweb_get_report for full body).'),
     totalCount: z.number().describe('Total reports matching the query before pagination.'),
@@ -143,16 +144,6 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         'Recovery hint when results are empty — echoes the filters applied and suggests how to broaden. Absent on successful result pages.',
       ),
   }),
-  errors: [
-    {
-      reason: 'not_found',
-      code: JsonRpcErrorCode.NotFound,
-      when: 'No reports matched the query.',
-      recovery:
-        'Broaden the search by removing or relaxing filters, or check the country code and filter values.',
-    },
-  ],
-
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_reports', {
       text: input.text,

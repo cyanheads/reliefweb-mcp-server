@@ -12,7 +12,7 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
     'Browse source organizations that contribute content to ReliefWeb, optionally filtered by name text or organization type. ' +
     'Returns short names, types, and URLs. ' +
     'Use the shortname value with the source filter in reliefweb_search_reports, reliefweb_search_jobs, and reliefweb_search_training.',
-  annotations: { readOnlyHint: true },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
@@ -45,19 +45,21 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
   output: z.object({
     items: z
       .array(
-        z.object({
-          id: z.number().describe('ReliefWeb numeric source ID.'),
-          name: z.string().describe('Full organization name.'),
-          shortname: z
-            .string()
-            .optional()
-            .describe(
-              'Organization short name — use this value in the source filter for other search tools.',
-            ),
-          types: z.array(z.string()).optional().describe('Organization type names.'),
-          url: z.string().optional().describe('Organization ReliefWeb profile URL.'),
-          homepage: z.string().optional().describe('Organization website URL.'),
-        }),
+        z
+          .object({
+            id: z.number().describe('ReliefWeb numeric source ID.'),
+            name: z.string().describe('Full organization name.'),
+            shortname: z
+              .string()
+              .optional()
+              .describe(
+                'Organization short name — use this value in the source filter for other search tools.',
+              ),
+            types: z.array(z.string()).optional().describe('Organization type names.'),
+            url: z.string().optional().describe('Organization ReliefWeb profile URL.'),
+            homepage: z.string().optional().describe('Organization website URL.'),
+          })
+          .describe('A source organization contributing content to ReliefWeb.'),
       )
       .describe('Source organizations contributing content to ReliefWeb.'),
     totalCount: z.number().describe('Total sources matching the query before pagination.'),
