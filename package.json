@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/reliefweb-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for the ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
   "type": "module",
   "main": "dist/index.js",
