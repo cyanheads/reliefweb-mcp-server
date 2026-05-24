@@ -37,13 +37,17 @@ export const reliefwebCrisisBriefing = prompt('reliefweb_crisis_briefing', {
 - List key appeals and response plans from the country/disaster profile.`;
 
     const jobsSection = `## Open Positions
-- Search for open humanitarian jobs with reliefweb_search_jobs filtered by country="${target}".
+- Determine whether "${target}" is a country/ISO3 code or a disaster name/GLIDE number.
+  - If it is a country or ISO3 code: call reliefweb_search_jobs with country="${target}".
+  - If it is a disaster name or GLIDE number: call reliefweb_search_jobs with text="${target}" (the country= filter expects an ISO3 code; passing a disaster name returns no results).
 - Group by organization and career category.
 - List title, organization, closing date, and URL for each position.
 - Note total count and any recurring roles (e.g., multiple UNHCR positions).`;
 
     const trainingSection = `## Training Opportunities
-- Search for upcoming training with reliefweb_search_training filtered by country or text.
+- Determine whether "${target}" is a country/ISO3 code or a disaster name/GLIDE number.
+  - If it is a country or ISO3 code: call reliefweb_search_training with country="${target}".
+  - If it is a disaster name or GLIDE number: call reliefweb_search_training with text="${target}".
 - List title, organizer, start date, format, and URL for each opportunity.`;
 
     let sections: string;
