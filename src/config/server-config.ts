@@ -9,7 +9,7 @@ import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 const ServerConfigSchema = z.object({
-  appName: z.string().describe('Pre-approved appname for the ReliefWeb API v2.'),
+  appName: z.string().min(1).describe('Pre-approved appname for the ReliefWeb API v2.'),
 });
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
