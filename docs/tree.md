@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-05-24 02:30:54
+Generated on: 2026-05-24 12:21:06
 
 ```text
 reliefweb-mcp-server/
@@ -147,6 +147,7 @@ reliefweb-mcp-server/
 ├── .env.example
 ├── .gitignore
 ├── .mcpbignore
+├── AGENTS.md
 ├── biome.json
 ├── bun.lock
 ├── bunfig.toml
