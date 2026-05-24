@@ -4,7 +4,7 @@
  */
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
-import { notFound } from '@cyanheads/mcp-ts-core/errors';
+import { notFound, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const countryResource = resource('reliefweb://countries/{iso3}', {
@@ -21,7 +21,7 @@ export const countryResource = resource('reliefweb://countries/{iso3}', {
   async handler(params, ctx) {
     const iso3 = params.iso3.trim().toUpperCase();
     if (iso3.length !== 3 || !/^[A-Z]{3}$/.test(iso3)) {
-      throw notFound(
+      throw validationError(
         `Invalid ISO3 code "${params.iso3}". Must be a 3-letter ISO 3166-1 alpha-3 code.`,
       );
     }

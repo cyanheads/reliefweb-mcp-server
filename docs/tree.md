@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-05-24 12:21:06
+Generated on: 2026-05-24 21:56:11
 
 ```text
 reliefweb-mcp-server/
@@ -78,6 +78,8 @@ reliefweb-mcp-server/
 │   ├── design-mcp-server/
 │   │   └── SKILL.md
 │   ├── field-test/
+│   │   └── SKILL.md
+│   ├── git-wrapup/
 │   │   └── SKILL.md
 │   ├── maintenance/
 │   │   └── SKILL.md

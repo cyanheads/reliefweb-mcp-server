@@ -6,6 +6,7 @@
 
 import type { Context } from '@cyanheads/mcp-ts-core';
 import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
+import { serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
 import type { StorageService } from '@cyanheads/mcp-ts-core/storage';
 import { httpErrorFromResponse, withRetry } from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig } from '@/config/server-config.js';
@@ -112,7 +113,7 @@ export class ReliefWebService {
 
   // ─── Internal fetch ──────────────────────────────────────────────────────────
 
-  private async post<T>(
+  private post<T>(
     contentType: ContentType,
     query: ReliefWebQuery,
     ctx: Context,
@@ -138,7 +139,6 @@ export class ReliefWebService {
 
         const text = await response.text();
         if (/^\s*<(!DOCTYPE\s+html|html[\s>])/i.test(text)) {
-          const { serviceUnavailable } = await import('@cyanheads/mcp-ts-core/errors');
           throw serviceUnavailable('ReliefWeb returned HTML — likely rate-limited or blocked.', {
             contentType,
           });
@@ -155,7 +155,7 @@ export class ReliefWebService {
     );
   }
 
-  private async get<T>(
+  private get<T>(
     contentType: ContentType,
     id: number,
     profile: 'full' | 'list' | 'minimal',
@@ -183,7 +183,6 @@ export class ReliefWebService {
 
         const text = await response.text();
         if (/^\s*<(!DOCTYPE\s+html|html[\s>])/i.test(text)) {
-          const { serviceUnavailable } = await import('@cyanheads/mcp-ts-core/errors');
           throw serviceUnavailable('ReliefWeb returned HTML — likely rate-limited or blocked.', {
             contentType,
             id,
@@ -221,11 +220,15 @@ export class ReliefWebService {
     return this.buildAndFilter(builtConditions);
   }
 
-  private makeDateFilter(field: string, from: string | undefined, to: string | undefined): object {
+  private makeDateFilter(
+    field: string,
+    from: string | undefined,
+    to: string | undefined,
+  ): FilterCondition {
     const value: DateRangeValue = {};
     if (from) value.from = from;
     if (to) value.to = to;
-    return { field, value };
+    return { field, value } as FilterCondition;
   }
 
   // ─── Reports ─────────────────────────────────────────────────────────────────
@@ -259,9 +262,7 @@ export class ReliefWebService {
     if (params.language) conditions.push({ field: 'language.code', value: params.language });
     if (params.source) conditions.push({ field: 'source.shortname', value: params.source });
     if (params.dateFrom || params.dateTo) {
-      conditions.push(
-        this.makeDateFilter('date.original', params.dateFrom, params.dateTo) as FilterCondition,
-      );
+      conditions.push(this.makeDateFilter('date.original', params.dateFrom, params.dateTo));
     }
 
     const filter = this.mergeFilters(conditions, params.rawFilter);
@@ -317,14 +318,14 @@ export class ReliefWebService {
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      const statusValue = values.length === 1 ? (values[0] ?? values) : values;
-      conditions.push({ field: 'status', value: statusValue });
+      conditions.push({
+        field: 'status',
+        value: values.length === 1 ? (values[0] as string) : values,
+      });
     }
     if (params.glide) conditions.push({ field: 'glide', value: params.glide });
     if (params.dateFrom || params.dateTo) {
-      conditions.push(
-        this.makeDateFilter('date.created', params.dateFrom, params.dateTo) as FilterCondition,
-      );
+      conditions.push(this.makeDateFilter('date.created', params.dateFrom, params.dateTo));
     }
 
     const filter = this.buildAndFilter(conditions);
@@ -466,13 +467,7 @@ export class ReliefWebService {
       conditions.push({ field: 'career_categories.name', value: params.careerCategory });
     if (params.language) conditions.push({ field: 'language.code', value: params.language });
     if (params.dateStartFrom || params.dateStartTo) {
-      conditions.push(
-        this.makeDateFilter(
-          'date.start',
-          params.dateStartFrom,
-          params.dateStartTo,
-        ) as FilterCondition,
-      );
+      conditions.push(this.makeDateFilter('date.start', params.dateStartFrom, params.dateStartTo));
     }
 
     const filter = this.buildAndFilter(conditions);
@@ -540,6 +535,28 @@ export function getReliefWebService(): ReliefWebService {
 
 // ─── Normalization helpers ────────────────────────────────────────────────────
 
+type LinkEntry = { title?: string; url?: string };
+type LinkWithDate = LinkEntry & { date?: string };
+
+function normalizeLinks(
+  items: Array<LinkEntry> | undefined,
+): Array<{ title: string; url: string }> | undefined {
+  const out = items?.flatMap((item) =>
+    item.title && item.url ? [{ title: item.title, url: item.url }] : [],
+  );
+  return out?.length ? out : undefined;
+}
+
+function normalizeDatedLinks(
+  items: Array<LinkWithDate> | undefined,
+): Array<{ title: string; url: string; date?: string }> | undefined {
+  const out = items?.flatMap((item) => {
+    if (!item.title || !item.url) return [];
+    return [{ title: item.title, url: item.url, ...(item.date ? { date: item.date } : {}) }];
+  });
+  return out?.length ? out : undefined;
+}
+
 function normalizeReportSummary(f: RawReportFields, id: number): ReportSummary {
   const r: ReportSummary = { id: f.id ?? id, title: f.title ?? '(untitled)' };
   if (f.date?.original) r.dateOriginal = f.date.original;
@@ -578,27 +595,15 @@ function normalizeDisasterSummary(f: RawDisasterFields, id: number): DisasterSum
 }
 
 function normalizeDisasterDetail(f: RawDisasterFields, id: number): DisasterDetail {
-  const summary = normalizeDisasterSummary(f, id);
-  const r: DisasterDetail = { ...summary };
+  const r: DisasterDetail = { ...normalizeDisasterSummary(f, id) };
   if (f.description) r.description = f.description;
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
-  if (f.profile?.key_content?.length) {
-    r.keyContent = f.profile.key_content.flatMap((kc) =>
-      kc.title && kc.url ? [{ title: kc.title, url: kc.url }] : [],
-    );
-  }
-  if (f.profile?.appeals_response_plans?.length) {
-    r.appealsResponsePlans = f.profile.appeals_response_plans.flatMap((ap) =>
-      ap.title && ap.url
-        ? [{ title: ap.title, url: ap.url, ...(ap.date ? { date: ap.date } : {}) }]
-        : [],
-    );
-  }
-  if (f.profile?.useful_links?.length) {
-    r.usefulLinks = f.profile.useful_links.flatMap((ul) =>
-      ul.title && ul.url ? [{ title: ul.title, url: ul.url }] : [],
-    );
-  }
+  const kc = normalizeLinks(f.profile?.key_content);
+  if (kc) r.keyContent = kc;
+  const ap = normalizeDatedLinks(f.profile?.appeals_response_plans);
+  if (ap) r.appealsResponsePlans = ap;
+  const ul = normalizeLinks(f.profile?.useful_links);
+  if (ul) r.usefulLinks = ul;
   return r;
 }
 
@@ -611,26 +616,14 @@ function normalizeCountrySummary(f: RawCountryFields, id: number): CountrySummar
 }
 
 function normalizeCountryDetail(f: RawCountryFields, id: number): CountryDetail {
-  const summary = normalizeCountrySummary(f, id);
-  const r: CountryDetail = { ...summary };
+  const r: CountryDetail = { ...normalizeCountrySummary(f, id) };
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
-  if (f.profile?.key_content?.length) {
-    r.keyContent = f.profile.key_content.flatMap((kc) =>
-      kc.title && kc.url ? [{ title: kc.title, url: kc.url }] : [],
-    );
-  }
-  if (f.profile?.appeals_response_plans?.length) {
-    r.appealsResponsePlans = f.profile.appeals_response_plans.flatMap((ap) =>
-      ap.title && ap.url
-        ? [{ title: ap.title, url: ap.url, ...(ap.date ? { date: ap.date } : {}) }]
-        : [],
-    );
-  }
-  if (f.profile?.useful_links?.length) {
-    r.usefulLinks = f.profile.useful_links.flatMap((ul) =>
-      ul.title && ul.url ? [{ title: ul.title, url: ul.url }] : [],
-    );
-  }
+  const kc = normalizeLinks(f.profile?.key_content);
+  if (kc) r.keyContent = kc;
+  const ap = normalizeDatedLinks(f.profile?.appeals_response_plans);
+  if (ap) r.appealsResponsePlans = ap;
+  const ul = normalizeLinks(f.profile?.useful_links);
+  if (ul) r.usefulLinks = ul;
   return r;
 }
 

@@ -4,7 +4,7 @@
  */
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
-import { notFound } from '@cyanheads/mcp-ts-core/errors';
+import { notFound, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const disasterResource = resource('reliefweb://disasters/{id}', {
@@ -21,7 +21,7 @@ export const disasterResource = resource('reliefweb://disasters/{id}', {
   async handler(params, ctx) {
     const id = parseInt(params.id, 10);
     if (Number.isNaN(id) || id <= 0) {
-      throw notFound(`Invalid disaster ID "${params.id}". Must be a positive integer.`);
+      throw validationError(`Invalid disaster ID "${params.id}". Must be a positive integer.`);
     }
     ctx.log.debug('reliefweb://disasters/{id}', { id });
     const disaster = await getReliefWebService().getDisaster(id, ctx);

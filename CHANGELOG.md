@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.4](changelog/0.1.x/0.1.4.md) — 2026-05-24
+
+Code simplification, error code corrections, description alignment, mcp-ts-core ^0.9.7 → ^0.9.9
+
 ## [0.1.3](changelog/0.1.x/0.1.3.md) — 2026-05-24
 
 Fix empty RELIEFWEB_APP_NAME validation and crisis_briefing country/disaster disambiguation
