@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "cyanheads/reliefweb-mcp-server",
-  "description": "ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
+  "name": "io.github.cyanheads/reliefweb-mcp-server",
+  "description": "Search ReliefWeb humanitarian reports, disasters, jobs, and training from OCHA.",
   "repository": {
     "url": "https://github.com/cyanheads/reliefweb-mcp-server",
     "source": "github"
   },
-  "version": "0.1.1",
+  "version": "0.1.2",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/reliefweb-mcp-server",
-      "runtimeHint": "node",
-      "version": "0.1.1",
+      "runtimeHint": "bun",
+      "version": "0.1.2",
       "packageArguments": [
         {
           "type": "positional",
@@ -47,8 +47,8 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/reliefweb-mcp-server",
-      "runtimeHint": "node",
-      "version": "0.1.1",
+      "runtimeHint": "bun",
+      "version": "0.1.2",
       "packageArguments": [
         {
           "type": "positional",
@@ -86,6 +86,12 @@
           "format": "string",
           "isRequired": false,
           "default": "/mcp"
+        },
+        {
+          "name": "MCP_PUBLIC_URL",
+          "description": "Public origin override for deployments behind a TLS-terminating reverse proxy (e.g. https://mcp.example.com).",
+          "format": "string",
+          "isRequired": false
         },
         {
           "name": "MCP_AUTH_MODE",

@@ -1,9 +1,15 @@
 {
   "manifest_version": "0.3",
   "name": "reliefweb-mcp-server",
-  "version": "0.1.1",
-  "description": "MCP server for the ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
+  "version": "0.1.2",
+  "description": "Search ReliefWeb humanitarian reports, disasters, jobs, and training from OCHA via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyanheads/reliefweb-mcp-server"
+  },
+  "homepage": "https://github.com/cyanheads/reliefweb-mcp-server#readme",
+  "license": "Apache-2.0",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -14,7 +20,7 @@
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
         "NODE_ENV": "production",
-        "RELIEFWEB_APP_NAME": "${RELIEFWEB_APP_NAME}"
+        "RELIEFWEB_APP_NAME": "${user_config.reliefweb_app_name}"
       }
     }
   },
@@ -24,11 +30,12 @@
   "tools_generated": true,
   "prompts_generated": true,
   "user_config": {
-    "RELIEFWEB_APP_NAME": {
+    "reliefweb_app_name": {
       "type": "string",
       "title": "ReliefWeb App Name",
       "description": "Pre-approved appname for the ReliefWeb API v2. Register at https://reliefweb.int/help/api.",
-      "required": true
+      "required": true,
+      "sensitive": false
     }
   }
 }

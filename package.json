@@ -1,7 +1,8 @@
 {
   "name": "@cyanheads/reliefweb-mcp-server",
-  "version": "0.1.1",
-  "description": "MCP server for the ReliefWeb humanitarian data API — search reports, disasters, jobs, training, and country profiles.",
+  "version": "0.1.2",
+  "mcpName": "io.github.cyanheads/reliefweb-mcp-server",
+  "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,23 +20,23 @@
     "server.json"
   ],
   "scripts": {
-    "build": "tsx scripts/build.ts",
-    "rebuild": "tsx scripts/clean.ts && tsx scripts/build.ts",
-    "clean": "tsx scripts/clean.ts",
-    "devcheck": "tsx scripts/devcheck.ts",
+    "build": "bun run scripts/build.ts",
+    "rebuild": "bun run scripts/clean.ts && bun run scripts/build.ts",
+    "clean": "bun run scripts/clean.ts",
+    "devcheck": "bun run scripts/devcheck.ts",
     "audit:refresh": "rm -f bun.lock && bun install && bun audit",
-    "tree": "tsx scripts/tree.ts",
-    "list-skills": "tsx scripts/list-skills.ts",
+    "tree": "bun run scripts/tree.ts",
+    "list-skills": "bun run scripts/list-skills.ts",
     "format": "biome check --write --unsafe .",
-    "lint:mcp": "tsx scripts/lint-mcp.ts",
-    "lint:packaging": "tsx scripts/lint-packaging.ts",
-    "bundle": "npm run build && npx -y @anthropic-ai/mcpb pack . dist/reliefweb-mcp-server.mcpb",
-    "changelog:build": "tsx scripts/build-changelog.ts",
-    "changelog:check": "tsx scripts/build-changelog.ts --check",
-    "test": "vitest run",
-    "start": "node dist/index.js",
-    "start:stdio": "MCP_TRANSPORT_TYPE=stdio node dist/index.js",
-    "start:http": "MCP_TRANSPORT_TYPE=http node dist/index.js"
+    "lint:mcp": "bun run scripts/lint-mcp.ts",
+    "lint:packaging": "bun run scripts/lint-packaging.ts",
+    "bundle": "bun run build && npx -y @anthropic-ai/mcpb pack . dist/reliefweb-mcp-server.mcpb",
+    "changelog:build": "bun run scripts/build-changelog.ts",
+    "changelog:check": "bun run scripts/build-changelog.ts --check",
+    "publish-mcp": "mcp-publisher login github -token \"$(security find-generic-password -a \"$USER\" -s mcp-publisher-github-pat -w)\" && mcp-publisher publish",
+    "test": "bunx vitest run",
+    "start:stdio": "MCP_TRANSPORT_TYPE=stdio bun ./dist/index.js",
+    "start:http": "MCP_TRANSPORT_TYPE=http bun ./dist/index.js"
   },
   "keywords": [
     "mcp",
@@ -46,15 +47,36 @@
     "disasters",
     "humanitarian-aid",
     "ocha",
-    "crisis-data"
+    "crisis-data",
+    "typescript",
+    "bun",
+    "stdio",
+    "streamable-http",
+    "ai-agent"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/cyanheads/reliefweb-mcp-server"
+    "url": "git+https://github.com/cyanheads/reliefweb-mcp-server.git"
   },
+  "bugs": {
+    "url": "https://github.com/cyanheads/reliefweb-mcp-server/issues"
+  },
+  "homepage": "https://github.com/cyanheads/reliefweb-mcp-server#readme",
+  "author": "cyanheads <casey@caseyjhand.com> (https://github.com/cyanheads/reliefweb-mcp-server#readme)",
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/cyanheads"
+    },
+    {
+      "type": "buy_me_a_coffee",
+      "url": "https://www.buymeacoffee.com/cyanheads"
+    }
+  ],
   "license": "Apache-2.0",
+  "packageManager": "bun@1.3.2",
   "engines": {
-    "bun": ">=1.3.0",
+    "bun": ">=1.3.2",
     "node": ">=24.0.0"
   },
   "publishConfig": {
