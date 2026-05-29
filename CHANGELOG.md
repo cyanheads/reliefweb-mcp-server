@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.5](changelog/0.1.x/0.1.5.md) — 2026-05-28
+
+mcp-ts-core ^0.9.9 → ^0.9.13: 413 body cap, HTTP session-init gate, quieter 401/403/400/404 logging, GET /mcp keywords; plugin metadata files; skill updates
+
 ## [0.1.4](changelog/0.1.x/0.1.4.md) — 2026-05-24
 
 Code simplification, error code corrections, description alignment, mcp-ts-core ^0.9.7 → ^0.9.9

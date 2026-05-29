@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: reliefweb-mcp-server
+abstract: "Model Context Protocol (MCP) server for ReliefWeb, providing search of humanitarian reports, disasters, jobs, training opportunities, and country profiles."
+type: software
+authors:
+  - family-names: Hand
+    given-names: Casey
+    orcid: "https://orcid.org/0009-0009-3726-568X"
+repository-code: "https://github.com/cyanheads/reliefweb-mcp-server"
+license: Apache-2.0
+keywords:
+  - mcp
+  - model-context-protocol
+  - reliefweb
+  - humanitarian-data
+  - ocha
+  - disaster-response
