@@ -39,7 +39,7 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       .min(0)
       .default(0)
       .describe(
-        'Zero-based offset for pagination. Use with limit and totalCount to page through results.',
+        'Zero-based offset for pagination. Use with limit and the totalCount enrichment field to page through results.',
       ),
   }),
   output: z.object({
@@ -62,8 +62,10 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
           .describe('A source organization contributing content to ReliefWeb.'),
       )
       .describe('Source organizations contributing content to ReliefWeb.'),
-    totalCount: z.number().describe('Total sources matching the query before pagination.'),
   }),
+  enrichment: {
+    totalCount: z.number().describe('Total sources matching the query before pagination.'),
+  },
 
   async handler(input, ctx) {
     ctx.log.info('reliefweb_list_sources', {
@@ -81,11 +83,12 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       },
       ctx,
     );
-    return { items: result.items, totalCount: result.totalCount };
+    ctx.enrich.total(result.totalCount);
+    return { items: result.items };
   },
 
   format: (result) => {
-    const lines: string[] = [`**Total:** ${result.totalCount} sources`];
+    const lines: string[] = [];
     for (const item of result.items) {
       const namePart = item.shortname ? `**${item.shortname}** — ${item.name}` : `**${item.name}**`;
       const typePart = item.types?.length ? ` (${item.types.join(', ')})` : '';

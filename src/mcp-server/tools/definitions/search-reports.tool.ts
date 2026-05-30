@@ -99,7 +99,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .min(0)
       .default(0)
       .describe(
-        'Zero-based offset for pagination. Use with limit and totalCount from the response to page through large result sets.',
+        'Zero-based offset for pagination. Use with limit and the totalCount enrichment field to page through large result sets.',
       ),
   }),
   output: z.object({
@@ -136,14 +136,16 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
           .describe('A matching report summary.'),
       )
       .describe('Matching reports (summaries only — use reliefweb_get_report for full body).'),
+  }),
+  enrichment: {
     totalCount: z.number().describe('Total reports matching the query before pagination.'),
-    message: z
+    notice: z
       .string()
       .optional()
       .describe(
         'Recovery hint when results are empty — echoes the filters applied and suggests how to broaden. Absent on successful result pages.',
       ),
-  }),
+  },
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_reports', {
       text: input.text,
@@ -171,27 +173,25 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       ctx,
     );
 
+    ctx.enrich.total(result.totalCount);
+
     if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
       if (input.country) filters.push(`country=${input.country}`);
       if (input.format) filters.push(`format="${input.format}"`);
       if (input.theme) filters.push(`theme="${input.theme}"`);
-      return {
-        items: [],
-        totalCount: 0,
-        message:
-          `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
+      ctx.enrich.notice(
+        `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broadening the search by removing filters, using different keywords, or checking country codes.',
-      };
+      );
     }
 
-    return { items: result.items, totalCount: result.totalCount };
+    return { items: result.items };
   },
 
   format: (result) => {
-    const lines: string[] = [`**Total:** ${result.totalCount} reports`];
-    if (result.message) lines.push(`\n> ${result.message}`);
+    const lines: string[] = [];
     for (const item of result.items) {
       lines.push(`\n## ${item.title}`);
       lines.push(`**ID:** ${item.id}`);

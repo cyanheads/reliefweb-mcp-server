@@ -3,7 +3,7 @@
  * @module tests/tools/list-sources.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebListSources } from '@/mcp-server/tools/definitions/list-sources.tool.js';
 
@@ -37,7 +37,7 @@ describe('reliefwebListSources', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: 1111, shortname: 'UNHCR' });
-    expect(result.totalCount).toBe(1);
+    expect(getEnrichment(ctx).totalCount).toBe(1);
   });
 
   it('passes type filter correctly', async () => {
@@ -85,7 +85,6 @@ describe('reliefwebListSources', () => {
           url: 'https://reliefweb.int/organization/msf',
         },
       ],
-      totalCount: 2,
     };
     const blocks = reliefwebListSources.format!(output);
     expect(blocks[0].type).toBe('text');
@@ -97,13 +96,11 @@ describe('reliefwebListSources', () => {
     expect(text).toContain('2222');
     expect(text).toContain('MSF');
     expect(text).toContain('https://reliefweb.int/organization/msf');
-    expect(text).toContain('2 sources');
   });
 
   it('formats sparse source without url gracefully', () => {
     const output = {
       items: [{ id: 999, name: 'No URL Source' }],
-      totalCount: 1,
     };
     const blocks = reliefwebListSources.format!(output);
     const text = (blocks[0] as { text: string }).text;

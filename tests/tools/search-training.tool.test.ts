@@ -3,7 +3,7 @@
  * @module tests/tools/search-training.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchTraining } from '@/mcp-server/tools/definitions/search-training.tool.js';
 
@@ -43,10 +43,10 @@ describe('reliefwebSearchTraining', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: 88888, title: 'Emergency Shelter Training' });
-    expect(result.totalCount).toBe(1);
+    expect(getEnrichment(ctx).totalCount).toBe(1);
   });
 
-  it('returns empty result with message when no training matches', async () => {
+  it('populates notice enrichment when no training matches', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
@@ -57,8 +57,10 @@ describe('reliefwebSearchTraining', () => {
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
     expect(result.items).toHaveLength(0);
-    expect(result.message).toBeDefined();
-    expect(result.message).toContain('zzznomatch');
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toContain('zzznomatch');
   });
 
   it('passes date range filters correctly', async () => {
@@ -111,7 +113,6 @@ describe('reliefwebSearchTraining', () => {
           urlAlias: 'https://reliefweb.int/training/test',
         },
       ],
-      totalCount: 1,
     };
     const blocks = reliefwebSearchTraining.format!(output);
     expect(blocks[0].type).toBe('text');

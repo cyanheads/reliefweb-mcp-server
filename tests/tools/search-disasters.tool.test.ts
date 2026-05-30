@@ -3,7 +3,7 @@
  * @module tests/tools/search-disasters.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchDisasters } from '@/mcp-server/tools/definitions/search-disasters.tool.js';
 
@@ -41,10 +41,10 @@ describe('reliefwebSearchDisasters', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: 55555, name: 'Turkey: Earthquake 2023' });
-    expect(result.totalCount).toBe(1);
+    expect(getEnrichment(ctx).totalCount).toBe(1);
   });
 
-  it('returns empty result with message when no disasters match', async () => {
+  it('populates notice enrichment when no disasters match', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
@@ -56,9 +56,11 @@ describe('reliefwebSearchDisasters', () => {
     const result = await reliefwebSearchDisasters.handler(input, ctx);
 
     expect(result.items).toHaveLength(0);
-    expect(result.message).toBeDefined();
-    expect(result.message).toContain('zzznomatch');
-    expect(result.message).toContain('ZZZ');
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toContain('zzznomatch');
+    expect(enrichment.notice).toContain('ZZZ');
   });
 
   it('handles sparse disaster with only required fields', async () => {
@@ -91,7 +93,6 @@ describe('reliefwebSearchDisasters', () => {
           urlAlias: 'https://reliefweb.int/disaster/eq-2023-000053-tur',
         },
       ],
-      totalCount: 1,
     };
     const blocks = reliefwebSearchDisasters.format!(output);
     expect(blocks[0].type).toBe('text');

@@ -3,7 +3,7 @@
  * @module tests/tools/search-reports.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchReports } from '@/mcp-server/tools/definitions/search-reports.tool.js';
 
@@ -42,10 +42,10 @@ describe('reliefwebSearchReports', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: 1234567, title: 'Syria Situation Report' });
-    expect(result.totalCount).toBe(1);
+    expect(getEnrichment(ctx).totalCount).toBe(1);
   });
 
-  it('returns empty result with message when no reports match', async () => {
+  it('populates notice enrichment when no reports match', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
@@ -53,9 +53,10 @@ describe('reliefwebSearchReports', () => {
     const result = await reliefwebSearchReports.handler(input, ctx);
 
     expect(result.items).toHaveLength(0);
-    expect(result.totalCount).toBe(0);
-    expect(result.message).toBeDefined();
-    expect(result.message).toContain('zzznomatch');
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toContain('zzznomatch');
   });
 
   it('applies defaults for limit and offset', async () => {
@@ -106,23 +107,15 @@ describe('reliefwebSearchReports', () => {
           headlineSummary: 'Key humanitarian update.',
         },
       ],
-      totalCount: 1,
     };
     const blocks = reliefwebSearchReports.format!(output);
     expect(blocks[0].type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('1234567');
     expect(text).toContain('Test Report');
-    expect(text).toContain('dateCreated'.replace('dateCreated', '2024-01-02'));
+    expect(text).toContain('2024-01-02');
     expect(text).toContain('2024-01-01');
     expect(text).toContain('Afghanistan');
     expect(text).toContain('OCHA');
-  });
-
-  it('includes message in format output when present', () => {
-    const output = { items: [], totalCount: 0, message: 'No results found.' };
-    const blocks = reliefwebSearchReports.format!(output);
-    const text = (blocks[0] as { text: string }).text;
-    expect(text).toContain('No results found.');
   });
 });

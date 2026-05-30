@@ -69,7 +69,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       .min(0)
       .default(0)
       .describe(
-        'Zero-based offset for pagination. Use with limit and totalCount to page through results.',
+        'Zero-based offset for pagination. Use with limit and the totalCount enrichment field to page through results.',
       ),
   }),
   output: z.object({
@@ -105,16 +105,18 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
           .describe('A matching training opportunity.'),
       )
       .describe('Matching training opportunities.'),
+  }),
+  enrichment: {
     totalCount: z
       .number()
       .describe('Total training listings matching the query before pagination.'),
-    message: z
+    notice: z
       .string()
       .optional()
       .describe(
         'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
       ),
-  }),
+  },
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_training', {
       text: input.text,
@@ -139,27 +141,25 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ctx,
     );
 
+    ctx.enrich.total(result.totalCount);
+
     if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
       if (input.country) filters.push(`country=${input.country}`);
       if (input.format) filters.push(`format="${input.format}"`);
       if (input.date_start_from) filters.push(`start_from=${input.date_start_from}`);
-      return {
-        items: [],
-        totalCount: 0,
-        message:
-          `No training matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
+      ctx.enrich.notice(
+        `No training matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broader keywords, remove date range constraints, or check the format spelling.',
-      };
+      );
     }
 
-    return { items: result.items, totalCount: result.totalCount };
+    return { items: result.items };
   },
 
   format: (result) => {
-    const lines: string[] = [`**Total:** ${result.totalCount} training opportunities`];
-    if (result.message) lines.push(`\n> ${result.message}`);
+    const lines: string[] = [];
     for (const item of result.items) {
       lines.push(`\n## ${item.title}`);
       lines.push(`**ID:** ${item.id}`);

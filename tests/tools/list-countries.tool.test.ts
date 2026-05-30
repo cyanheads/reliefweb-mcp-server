@@ -3,7 +3,7 @@
  * @module tests/tools/list-countries.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebListCountries } from '@/mcp-server/tools/definitions/list-countries.tool.js';
 
@@ -42,7 +42,7 @@ describe('reliefwebListCountries', () => {
     const result = await reliefwebListCountries.handler(input, ctx);
 
     expect(result.items).toHaveLength(2);
-    expect(result.totalCount).toBe(2);
+    expect(getEnrichment(ctx).totalCount).toBe(2);
   });
 
   it('applies default limit of 100', async () => {
@@ -93,7 +93,6 @@ describe('reliefwebListCountries', () => {
         },
         { id: 10002, name: 'France', iso3: 'FRA' },
       ],
-      totalCount: 2,
     };
     const blocks = reliefwebListCountries.format!(output);
     expect(blocks[0].type).toBe('text');
@@ -103,6 +102,5 @@ describe('reliefwebListCountries', () => {
     expect(text).toContain('AFG');
     expect(text).toContain('10002');
     expect(text).toContain('France');
-    expect(text).toContain('2 countries');
   });
 });

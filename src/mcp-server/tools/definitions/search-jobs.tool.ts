@@ -63,7 +63,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .min(0)
       .default(0)
       .describe(
-        'Zero-based offset for pagination. Use with limit and totalCount to page through results.',
+        'Zero-based offset for pagination. Use with limit and the totalCount enrichment field to page through results.',
       ),
   }),
   output: z.object({
@@ -95,14 +95,16 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
           .describe('A matching job listing.'),
       )
       .describe('Matching job listings.'),
+  }),
+  enrichment: {
     totalCount: z.number().describe('Total jobs matching the query before pagination.'),
-    message: z
+    notice: z
       .string()
       .optional()
       .describe(
         'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
       ),
-  }),
+  },
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_jobs', {
       text: input.text,
@@ -125,26 +127,24 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       ctx,
     );
 
+    ctx.enrich.total(result.totalCount);
+
     if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
       if (input.country) filters.push(`country=${input.country}`);
       if (input.career_category) filters.push(`career_category="${input.career_category}"`);
-      return {
-        items: [],
-        totalCount: 0,
-        message:
-          `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
+      ctx.enrich.notice(
+        `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broader keywords, remove the country filter, or check the career category spelling.',
-      };
+      );
     }
 
-    return { items: result.items, totalCount: result.totalCount };
+    return { items: result.items };
   },
 
   format: (result) => {
-    const lines: string[] = [`**Total:** ${result.totalCount} jobs`];
-    if (result.message) lines.push(`\n> ${result.message}`);
+    const lines: string[] = [];
     for (const item of result.items) {
       lines.push(`\n## ${item.title}`);
       lines.push(`**ID:** ${item.id}`);

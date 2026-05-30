@@ -35,7 +35,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       .min(0)
       .default(0)
       .describe(
-        'Zero-based offset for pagination. Use with limit and totalCount to page through results.',
+        'Zero-based offset for pagination. Use with limit and the totalCount enrichment field to page through results.',
       ),
   }),
   output: z.object({
@@ -63,8 +63,10 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
           .describe('A country or territory tracked by ReliefWeb.'),
       )
       .describe('Countries tracked by ReliefWeb.'),
-    totalCount: z.number().describe('Total countries matching the filter before pagination.'),
   }),
+  enrichment: {
+    totalCount: z.number().describe('Total countries matching the filter before pagination.'),
+  },
 
   async handler(input, ctx) {
     ctx.log.info('reliefweb_list_countries', {
@@ -79,11 +81,12 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       },
       ctx,
     );
-    return { items: result.items, totalCount: result.totalCount };
+    ctx.enrich.total(result.totalCount);
+    return { items: result.items };
   },
 
   format: (result) => {
-    const lines: string[] = [`**Total:** ${result.totalCount} countries`];
+    const lines: string[] = [];
     for (const item of result.items) {
       const parts: string[] = [`**${item.name}**`];
       if (item.iso3) parts.push(`(${item.iso3})`);

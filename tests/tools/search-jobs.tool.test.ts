@@ -3,7 +3,7 @@
  * @module tests/tools/search-jobs.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchJobs } from '@/mcp-server/tools/definitions/search-jobs.tool.js';
 
@@ -44,10 +44,10 @@ describe('reliefwebSearchJobs', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: 77777, title: 'Emergency Response Officer' });
-    expect(result.totalCount).toBe(1);
+    expect(getEnrichment(ctx).totalCount).toBe(1);
   });
 
-  it('returns empty result with message when no jobs match', async () => {
+  it('populates notice enrichment when no jobs match', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
@@ -59,8 +59,10 @@ describe('reliefwebSearchJobs', () => {
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
     expect(result.items).toHaveLength(0);
-    expect(result.message).toBeDefined();
-    expect(result.message).toContain('zzznomatch');
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toContain('zzznomatch');
   });
 
   it('normalizes country code to uppercase', async () => {
@@ -102,7 +104,6 @@ describe('reliefwebSearchJobs', () => {
           urlAlias: 'https://reliefweb.int/job/test',
         },
       ],
-      totalCount: 1,
     };
     const blocks = reliefwebSearchJobs.format!(output);
     expect(blocks[0].type).toBe('text');
