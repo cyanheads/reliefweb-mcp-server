@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-05-29 05:38:01
+Generated on: 2026-06-02 15:04:20
 
 ```text
 reliefweb-mcp-server/
@@ -29,12 +29,14 @@ reliefweb-mcp-server/
 │   ├── build.ts
 │   ├── check-docs-sync.ts
 │   ├── check-framework-antipatterns.ts
+│   ├── check-skill-versions.ts
 │   ├── check-skills-sync.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
 ├── skills/
@@ -61,6 +63,8 @@ reliefweb-mcp-server/
 │   ├── api-errors/
 │   │   └── SKILL.md
 │   ├── api-linter/
+│   │   └── SKILL.md
+│   ├── api-mirror/
 │   │   └── SKILL.md
 │   ├── api-services/
 │   │   ├── references/
@@ -89,6 +93,13 @@ reliefweb-mcp-server/
 │   ├── git-wrapup/
 │   │   └── SKILL.md
 │   ├── maintenance/
+│   │   └── SKILL.md
+│   ├── orchestrations/
+│   │   ├── workflows/
+│   │   │   ├── field-test-fix.md
+│   │   │   ├── fix-wrapup-release.md
+│   │   │   ├── greenfield-build.md
+│   │   │   └── maintenance-release.md
 │   │   └── SKILL.md
 │   ├── polish-docs-meta/
 │   │   ├── references/
@@ -139,7 +150,11 @@ reliefweb-mcp-server/
 │   └── index.ts
 ├── tests/
 │   ├── prompts/
+│   │   └── crisis-briefing.prompt.test.ts
 │   ├── resources/
+│   │   ├── country.resource.test.ts
+│   │   ├── disaster.resource.test.ts
+│   │   └── report.resource.test.ts
 │   └── tools/
 │       ├── get-country.tool.test.ts
 │       ├── get-disaster.tool.test.ts
@@ -148,8 +163,10 @@ reliefweb-mcp-server/
 │       ├── list-sources.tool.test.ts
 │       ├── search-disasters.tool.test.ts
 │       ├── search-jobs.tool.test.ts
+│       ├── search-reports-edge.tool.test.ts
 │       ├── search-reports.tool.test.ts
-│       └── search-training.tool.test.ts
+│       ├── search-training.tool.test.ts
+│       └── security.tool.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
