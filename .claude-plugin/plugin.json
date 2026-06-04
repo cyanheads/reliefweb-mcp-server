@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/reliefweb-mcp-server",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads"

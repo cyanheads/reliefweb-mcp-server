@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-06-02 15:04:20
+Generated on: 2026-06-04 07:39:59
 
 ```text
 reliefweb-mcp-server/
@@ -155,6 +155,8 @@ reliefweb-mcp-server/
 │   │   ├── country.resource.test.ts
 │   │   ├── disaster.resource.test.ts
 │   │   └── report.resource.test.ts
+│   ├── services/
+│   │   └── reliefweb-service.test.ts
 │   └── tools/
 │       ├── get-country.tool.test.ts
 │       ├── get-disaster.tool.test.ts
