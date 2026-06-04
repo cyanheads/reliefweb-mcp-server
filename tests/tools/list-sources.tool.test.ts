@@ -44,11 +44,14 @@ describe('reliefwebListSources', () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
-    const input = reliefwebListSources.input.parse({ type: 'NGO', limit: 20 });
+    const input = reliefwebListSources.input.parse({
+      type: 'Non-governmental Organization',
+      limit: 20,
+    });
     await reliefwebListSources.handler(input, ctx);
 
     expect(mockListSources).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'NGO', limit: 20 }),
+      expect.objectContaining({ type: 'Non-governmental Organization', limit: 20 }),
       ctx,
     );
   });

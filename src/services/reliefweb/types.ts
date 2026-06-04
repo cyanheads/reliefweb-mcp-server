@@ -63,9 +63,21 @@ export interface RawDisasterFields {
   primary_type?: { name?: string };
   profile?: {
     overview?: string;
-    key_content?: Array<{ title?: string; url?: string }>;
-    appeals_response_plans?: Array<{ title?: string; url?: string; date?: string }>;
-    useful_links?: Array<{ title?: string; url?: string }>;
+    key_content?: {
+      title?: string;
+      active?: Array<{ title?: string; url?: string; cover?: string }>;
+      archive?: Array<{ title?: string; url?: string; cover?: string }>;
+    };
+    appeals_response_plans?: {
+      title?: string;
+      active?: Array<{ title?: string; url?: string; date?: string }>;
+      archive?: Array<{ title?: string; url?: string; date?: string }>;
+    };
+    useful_links?: {
+      title?: string;
+      active?: Array<{ title?: string; url?: string; cover?: string }>;
+      archive?: Array<{ title?: string; url?: string; cover?: string }>;
+    };
   };
   status?: string;
   type?: Array<{ name?: string }>;
@@ -78,9 +90,21 @@ export interface RawCountryFields {
   name?: string;
   profile?: {
     overview?: string;
-    key_content?: Array<{ title?: string; url?: string }>;
-    appeals_response_plans?: Array<{ title?: string; url?: string; date?: string }>;
-    useful_links?: Array<{ title?: string; url?: string }>;
+    key_content?: {
+      title?: string;
+      active?: Array<{ title?: string; url?: string; cover?: string }>;
+      archive?: Array<{ title?: string; url?: string; cover?: string }>;
+    };
+    appeals_response_plans?: {
+      title?: string;
+      active?: Array<{ title?: string; url?: string; date?: string }>;
+      archive?: Array<{ title?: string; url?: string; date?: string }>;
+    };
+    useful_links?: {
+      title?: string;
+      active?: Array<{ title?: string; url?: string; cover?: string }>;
+      archive?: Array<{ title?: string; url?: string; cover?: string }>;
+    };
   };
   status?: string;
   url_alias?: string;
@@ -119,7 +143,7 @@ export interface RawSourceFields {
   id?: number;
   name?: string;
   shortname?: string;
-  type?: Array<{ name?: string }>;
+  type?: { name?: string };
   url?: string;
 }
 

@@ -22,7 +22,7 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       .string()
       .optional()
       .describe(
-        'Organization type (e.g., Government, International Organization, NGO, Academia). Filters on type.name.',
+        'Organization type. Must match exact API values: "Government", "International Organization", "Non-governmental Organization", "Academia", "United Nations", "Other". Filters on type.name.',
       ),
     limit: z
       .number()

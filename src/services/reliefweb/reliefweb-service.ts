@@ -189,8 +189,8 @@ export class ReliefWebService {
           });
         }
 
-        const parsed = JSON.parse(text) as { data?: RawRecord<T> };
-        return parsed.data ?? null;
+        const parsed = JSON.parse(text) as { data?: RawRecord<T>[] };
+        return parsed.data?.[0] ?? null;
       },
       {
         operation: `reliefweb.${contentType}.get`,
@@ -598,11 +598,14 @@ function normalizeDisasterDetail(f: RawDisasterFields, id: number): DisasterDeta
   const r: DisasterDetail = { ...normalizeDisasterSummary(f, id) };
   if (f.description) r.description = f.description;
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
-  const kc = normalizeLinks(f.profile?.key_content);
+  const kcField = f.profile?.key_content;
+  const kc = normalizeLinks([...(kcField?.active ?? []), ...(kcField?.archive ?? [])]);
   if (kc) r.keyContent = kc;
-  const ap = normalizeDatedLinks(f.profile?.appeals_response_plans);
+  const apField = f.profile?.appeals_response_plans;
+  const ap = normalizeDatedLinks([...(apField?.active ?? []), ...(apField?.archive ?? [])]);
   if (ap) r.appealsResponsePlans = ap;
-  const ul = normalizeLinks(f.profile?.useful_links);
+  const ulField = f.profile?.useful_links;
+  const ul = normalizeLinks([...(ulField?.active ?? []), ...(ulField?.archive ?? [])]);
   if (ul) r.usefulLinks = ul;
   return r;
 }
@@ -618,11 +621,14 @@ function normalizeCountrySummary(f: RawCountryFields, id: number): CountrySummar
 function normalizeCountryDetail(f: RawCountryFields, id: number): CountryDetail {
   const r: CountryDetail = { ...normalizeCountrySummary(f, id) };
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
-  const kc = normalizeLinks(f.profile?.key_content);
+  const kcField = f.profile?.key_content;
+  const kc = normalizeLinks([...(kcField?.active ?? []), ...(kcField?.archive ?? [])]);
   if (kc) r.keyContent = kc;
-  const ap = normalizeDatedLinks(f.profile?.appeals_response_plans);
+  const apField = f.profile?.appeals_response_plans;
+  const ap = normalizeDatedLinks([...(apField?.active ?? []), ...(apField?.archive ?? [])]);
   if (ap) r.appealsResponsePlans = ap;
-  const ul = normalizeLinks(f.profile?.useful_links);
+  const ulField = f.profile?.useful_links;
+  const ul = normalizeLinks([...(ulField?.active ?? []), ...(ulField?.archive ?? [])]);
   if (ul) r.usefulLinks = ul;
   return r;
 }
@@ -664,7 +670,7 @@ function normalizeTrainingSummary(f: RawTrainingFields, id: number): TrainingSum
 function normalizeSourceSummary(f: RawSourceFields, id: number): SourceSummary {
   const r: SourceSummary = { id: f.id ?? id, name: f.name ?? '(unnamed)' };
   if (f.shortname) r.shortname = f.shortname;
-  if (f.type?.length) r.types = f.type.map((t) => t.name ?? '').filter(Boolean);
+  if (f.type?.name) r.types = [f.type.name];
   if (f.url) r.url = f.url;
   if (f.homepage) r.homepage = f.homepage;
   return r;
