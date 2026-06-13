@@ -24,6 +24,8 @@ import { reliefwebSearchTraining } from './mcp-server/tools/definitions/search-t
 import { initReliefWebService } from './services/reliefweb/reliefweb-service.js';
 
 await createApp({
+  name: 'reliefweb-mcp-server',
+  title: 'reliefweb-mcp-server',
   tools: [
     reliefwebSearchReports,
     reliefwebGetReport,
