@@ -261,6 +261,7 @@ describe('security: format() output does not expose internal state', () => {
           languages: ['en'],
         },
       ],
+      appliedFilters: { sort: 'date.original:desc', preset: 'latest', limit: 10, offset: 0 },
     };
     const blocks = reliefwebSearchReports.format!(output);
     const text = (blocks[0] as { text: string }).text;

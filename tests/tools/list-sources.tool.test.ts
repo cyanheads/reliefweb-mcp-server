@@ -3,6 +3,7 @@
  * @module tests/tools/list-sources.tool.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebListSources } from '@/mcp-server/tools/definitions/list-sources.tool.js';
@@ -54,6 +55,49 @@ describe('reliefwebListSources', () => {
       expect.objectContaining({ type: 'Non-governmental Organization', limit: 20 }),
       ctx,
     );
+  });
+
+  it('populates notice enrichment echoing type and text when no sources match', async () => {
+    mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListSources.input.parse({ text: 'zzz', type: 'Academia' });
+    const result = await reliefwebListSources.handler(input, ctx);
+
+    expect(result.items).toHaveLength(0);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toContain('text="zzz"');
+    expect(enrichment.notice).toContain('type="Academia"');
+  });
+
+  it('does not populate notice when sources are returned', async () => {
+    mockListSources.mockResolvedValue({
+      items: [{ id: 1, name: 'UNHCR', shortname: 'UNHCR' }],
+      totalCount: 1,
+    });
+
+    const ctx = createMockContext();
+    const input = reliefwebListSources.input.parse({ text: 'UNHCR' });
+    await reliefwebListSources.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toBeUndefined();
+  });
+
+  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+    mockListSources.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503'),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
+    const input = reliefwebListSources.input.parse({ type: 'United Nations' });
+
+    const err = await reliefwebListSources.handler(input, ctx).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
+    expect((err as McpError).data).toHaveProperty('recovery.hint');
   });
 
   it('handles sparse source without optional fields', async () => {

@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reliefwebListSources = tool('reliefweb_list_sources', {
@@ -65,7 +66,22 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
   }),
   enrichment: {
     totalCount: z.number().describe('Total sources matching the query before pagination.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Recovery hint when results are empty — echoes the active filters and suggests how to broaden. Absent on successful result pages.',
+      ),
   },
+  errors: [
+    {
+      reason: 'upstream_error',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      recovery:
+        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted before retrying.',
+    },
+  ],
 
   async handler(input, ctx) {
     ctx.log.info('reliefweb_list_sources', {
@@ -74,16 +90,35 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       limit: input.limit,
     });
 
-    const result = await getReliefWebService().listSources(
-      {
-        ...(input.text?.trim() ? { text: input.text } : {}),
-        ...(input.type?.trim() ? { type: input.type } : {}),
-        limit: input.limit,
-        offset: input.offset,
-      },
-      ctx,
-    );
+    const result = await getReliefWebService()
+      .listSources(
+        {
+          ...(input.text?.trim() ? { text: input.text } : {}),
+          ...(input.type?.trim() ? { type: input.type } : {}),
+          limit: input.limit,
+          offset: input.offset,
+        },
+        ctx,
+      )
+      .catch((err: unknown) => {
+        throw ctx.fail('upstream_error', 'ReliefWeb API error while listing sources.', {
+          cause: err,
+          ...ctx.recoveryFor('upstream_error'),
+        });
+      });
+
     ctx.enrich.total(result.totalCount);
+
+    if (result.items.length === 0) {
+      const filters: string[] = [];
+      if (input.text) filters.push(`text="${input.text}"`);
+      if (input.type) filters.push(`type="${input.type}"`);
+      ctx.enrich.notice(
+        `No sources matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
+          'Remove the text filter or check that type is an exact API value (e.g. "Non-governmental Organization", "United Nations").',
+      );
+    }
+
     return { items: result.items };
   },
 

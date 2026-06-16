@@ -3,6 +3,7 @@
  * @module tests/tools/search-disasters.tool.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchDisasters } from '@/mcp-server/tools/definitions/search-disasters.tool.js';
@@ -44,6 +45,29 @@ describe('reliefwebSearchDisasters', () => {
     expect(getEnrichment(ctx).totalCount).toBe(1);
   });
 
+  it('echoes appliedFilters with normalized country and resolved defaults', async () => {
+    mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({
+      country: 'tur',
+      disaster_type: 'Earthquake',
+      status: 'past',
+      limit: 5,
+    });
+    const result = await reliefwebSearchDisasters.handler(input, ctx);
+
+    expect(result.appliedFilters).toMatchObject({
+      country: 'TUR',
+      disasterType: 'Earthquake',
+      status: 'past',
+      sort: 'date.created:desc',
+      preset: 'latest',
+      limit: 5,
+      offset: 0,
+    });
+  });
+
   it('populates notice enrichment when no disasters match', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
 
@@ -61,6 +85,38 @@ describe('reliefwebSearchDisasters', () => {
     expect(enrichment.notice).toBeDefined();
     expect(enrichment.notice).toContain('zzznomatch');
     expect(enrichment.notice).toContain('ZZZ');
+  });
+
+  it('empty-result notice echoes glide and date range filters', async () => {
+    mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({
+      glide: 'EQ-2023-000053-TUR',
+      date_from: '2023-01-01T00:00:00+00:00',
+      date_to: '2023-12-31T00:00:00+00:00',
+    });
+    await reliefwebSearchDisasters.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('glide=EQ-2023-000053-TUR');
+    expect(notice).toContain('date_from=2023-01-01T00:00:00+00:00');
+    expect(notice).toContain('date_to=2023-12-31T00:00:00+00:00');
+  });
+
+  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+    mockSearchDisasters.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.RateLimited, 'ReliefWeb returned HTTP 429'),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
+    const input = reliefwebSearchDisasters.input.parse({ text: 'quake' });
+
+    const err = await reliefwebSearchDisasters.handler(input, ctx).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
+    expect((err as McpError).data).toHaveProperty('recovery.hint');
   });
 
   it('handles sparse disaster with only required fields', async () => {
@@ -93,10 +149,18 @@ describe('reliefwebSearchDisasters', () => {
           urlAlias: 'https://reliefweb.int/disaster/eq-2023-000053-tur',
         },
       ],
+      appliedFilters: {
+        disasterType: 'Earthquake',
+        sort: 'date.created:desc',
+        preset: 'latest',
+        limit: 10,
+        offset: 0,
+      },
     };
     const blocks = reliefwebSearchDisasters.format!(output);
     expect(blocks[0].type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
+    expect(text).toContain('Applied filters:');
     expect(text).toContain('55555');
     expect(text).toContain('Turkey Earthquake');
     expect(text).toContain('EQ-2023-000053-TUR');

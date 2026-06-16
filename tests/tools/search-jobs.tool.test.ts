@@ -3,6 +3,7 @@
  * @module tests/tools/search-jobs.tool.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchJobs } from '@/mcp-server/tools/definitions/search-jobs.tool.js';
@@ -65,6 +66,54 @@ describe('reliefwebSearchJobs', () => {
     expect(enrichment.notice).toContain('zzznomatch');
   });
 
+  it('empty-result notice echoes source, theme, and experience filters', async () => {
+    mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({
+      source: 'UNHCR',
+      theme: 'Protection',
+      experience: '5-9 years',
+    });
+    await reliefwebSearchJobs.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('source="UNHCR"');
+    expect(notice).toContain('theme="Protection"');
+    expect(notice).toContain('experience="5-9 years"');
+  });
+
+  it('echoes appliedFilters with normalized country and resolved sort', async () => {
+    mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ country: 'ken', source: 'WFP', limit: 20 });
+    const result = await reliefwebSearchJobs.handler(input, ctx);
+
+    expect(result.appliedFilters).toMatchObject({
+      country: 'KEN',
+      source: 'WFP',
+      sort: 'date.created:desc',
+      limit: 20,
+      offset: 0,
+    });
+  });
+
+  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+    mockSearchJobs.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503'),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
+    const input = reliefwebSearchJobs.input.parse({ text: 'officer' });
+
+    const err = await reliefwebSearchJobs.handler(input, ctx).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
+    expect((err as McpError).data).toHaveProperty('recovery.hint');
+  });
+
   it('normalizes country code to uppercase', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
@@ -104,10 +153,17 @@ describe('reliefwebSearchJobs', () => {
           urlAlias: 'https://reliefweb.int/job/test',
         },
       ],
+      appliedFilters: {
+        careerCategory: 'Logistics and Telecommunications',
+        sort: 'date.created:desc',
+        limit: 10,
+        offset: 0,
+      },
     };
     const blocks = reliefwebSearchJobs.format!(output);
     expect(blocks[0].type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
+    expect(text).toContain('Applied filters:');
     expect(text).toContain('77777');
     expect(text).toContain('Field Coordinator');
     expect(text).toContain('WFP');

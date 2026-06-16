@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import type { FilterCondition } from '@/services/reliefweb/types.js';
 
@@ -136,6 +137,33 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
           .describe('A matching report summary.'),
       )
       .describe('Matching reports (summaries only — use reliefweb_get_report for full body).'),
+    appliedFilters: z
+      .object({
+        text: z.string().optional().describe('Full-text query the search used.'),
+        country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
+        disasterId: z.number().optional().describe('Disaster ID filter applied.'),
+        format: z.string().optional().describe('Format name filter applied.'),
+        theme: z.string().optional().describe('Theme name filter applied.'),
+        language: z.string().optional().describe('Language code filter applied.'),
+        source: z.string().optional().describe('Source short name filter applied.'),
+        dateFrom: z.string().optional().describe('Earliest publication date filter applied.'),
+        dateTo: z.string().optional().describe('Latest publication date filter applied.'),
+        rawFilter: z
+          .boolean()
+          .optional()
+          .describe('True when a raw compound filter object was merged into the query.'),
+        sort: z.string().describe('Sort order the query used (resolved, including the default).'),
+        preset: z
+          .string()
+          .describe(
+            'ReliefWeb preset the query used: latest (default) or analysis when include_archived.',
+          ),
+        limit: z.number().describe('Result limit the query used.'),
+        offset: z.number().describe('Pagination offset the query used.'),
+      })
+      .describe(
+        'The resolved filter set the query actually ran with, after normalization and defaults. Echoes back so the agent can confirm how its inputs were interpreted.',
+      ),
   }),
   enrichment: {
     totalCount: z.number().describe('Total reports matching the query before pagination.'),
@@ -146,6 +174,16 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         'Recovery hint when results are empty — echoes the filters applied and suggests how to broaden. Absent on successful result pages.',
       ),
   },
+  errors: [
+    {
+      reason: 'upstream_error',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      recovery:
+        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted, and verify any raw filter object is well-formed.',
+    },
+  ],
+
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_reports', {
       text: input.text,
@@ -153,45 +191,76 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       limit: input.limit,
     });
 
-    const result = await getReliefWebService().searchReports(
-      {
-        ...(input.text?.trim() ? { text: input.text } : {}),
-        ...(input.country?.trim() ? { country: input.country.toUpperCase() } : {}),
-        ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
-        ...(input.format?.trim() ? { format: input.format } : {}),
-        ...(input.theme?.trim() ? { theme: input.theme } : {}),
-        ...(input.language?.trim() ? { language: input.language } : {}),
-        ...(input.source?.trim() ? { source: input.source } : {}),
-        ...(input.date_from?.trim() ? { dateFrom: input.date_from } : {}),
-        ...(input.date_to?.trim() ? { dateTo: input.date_to } : {}),
-        ...(input.sort?.trim() ? { sort: input.sort } : {}),
-        ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
-        ...(input.filter != null ? { rawFilter: input.filter as FilterCondition } : {}),
-        limit: input.limit,
-        offset: input.offset,
-      },
-      ctx,
-    );
+    const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+
+    const appliedFilters = {
+      ...(input.text?.trim() ? { text: input.text } : {}),
+      ...(country ? { country } : {}),
+      ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
+      ...(input.format?.trim() ? { format: input.format } : {}),
+      ...(input.theme?.trim() ? { theme: input.theme } : {}),
+      ...(input.language?.trim() ? { language: input.language } : {}),
+      ...(input.source?.trim() ? { source: input.source } : {}),
+      ...(input.date_from?.trim() ? { dateFrom: input.date_from } : {}),
+      ...(input.date_to?.trim() ? { dateTo: input.date_to } : {}),
+      ...(input.filter != null ? { rawFilter: true } : {}),
+      sort: input.sort?.trim() || 'date.original:desc',
+      preset: input.include_archived ? 'analysis' : 'latest',
+      limit: input.limit,
+      offset: input.offset,
+    };
+
+    const result = await getReliefWebService()
+      .searchReports(
+        {
+          ...(input.text?.trim() ? { text: input.text } : {}),
+          ...(country ? { country } : {}),
+          ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
+          ...(input.format?.trim() ? { format: input.format } : {}),
+          ...(input.theme?.trim() ? { theme: input.theme } : {}),
+          ...(input.language?.trim() ? { language: input.language } : {}),
+          ...(input.source?.trim() ? { source: input.source } : {}),
+          ...(input.date_from?.trim() ? { dateFrom: input.date_from } : {}),
+          ...(input.date_to?.trim() ? { dateTo: input.date_to } : {}),
+          ...(input.sort?.trim() ? { sort: input.sort } : {}),
+          ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
+          ...(input.filter != null ? { rawFilter: input.filter as FilterCondition } : {}),
+          limit: input.limit,
+          offset: input.offset,
+        },
+        ctx,
+      )
+      .catch((err: unknown) => {
+        throw ctx.fail('upstream_error', 'ReliefWeb API error while searching reports.', {
+          cause: err,
+          ...ctx.recoveryFor('upstream_error'),
+        });
+      });
 
     ctx.enrich.total(result.totalCount);
 
     if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
-      if (input.country) filters.push(`country=${input.country}`);
+      if (country) filters.push(`country=${country}`);
+      if (input.disaster_id != null) filters.push(`disaster_id=${input.disaster_id}`);
       if (input.format) filters.push(`format="${input.format}"`);
       if (input.theme) filters.push(`theme="${input.theme}"`);
+      if (input.language) filters.push(`language=${input.language}`);
+      if (input.source) filters.push(`source="${input.source}"`);
+      if (input.date_from) filters.push(`date_from=${input.date_from}`);
+      if (input.date_to) filters.push(`date_to=${input.date_to}`);
       ctx.enrich.notice(
         `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broadening the search by removing filters, using different keywords, or checking country codes.',
       );
     }
 
-    return { items: result.items };
+    return { items: result.items, appliedFilters };
   },
 
   format: (result) => {
-    const lines: string[] = [];
+    const lines: string[] = [renderAppliedFilters(result.appliedFilters)];
     for (const item of result.items) {
       lines.push(`\n## ${item.title}`);
       lines.push(`**ID:** ${item.id}`);
@@ -210,3 +279,39 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     return [{ type: 'text', text: lines.join('\n') }];
   },
 });
+
+/**
+ * Render the resolved filter set as a single compact line. Every field is named so
+ * the `format-parity` lint sees each output key reflected in `content[]`, keeping the
+ * markdown surface in sync with `structuredContent` for content[]-only clients.
+ */
+function renderAppliedFilters(f: {
+  text?: string | undefined;
+  country?: string | undefined;
+  disasterId?: number | undefined;
+  format?: string | undefined;
+  theme?: string | undefined;
+  language?: string | undefined;
+  source?: string | undefined;
+  dateFrom?: string | undefined;
+  dateTo?: string | undefined;
+  rawFilter?: boolean | undefined;
+  sort: string;
+  preset: string;
+  limit: number;
+  offset: number;
+}): string {
+  const parts: string[] = [];
+  if (f.text != null) parts.push(`text="${f.text}"`);
+  if (f.country != null) parts.push(`country=${f.country}`);
+  if (f.disasterId != null) parts.push(`disasterId=${f.disasterId}`);
+  if (f.format != null) parts.push(`format="${f.format}"`);
+  if (f.theme != null) parts.push(`theme="${f.theme}"`);
+  if (f.language != null) parts.push(`language=${f.language}`);
+  if (f.source != null) parts.push(`source="${f.source}"`);
+  if (f.dateFrom != null) parts.push(`dateFrom=${f.dateFrom}`);
+  if (f.dateTo != null) parts.push(`dateTo=${f.dateTo}`);
+  if (f.rawFilter != null) parts.push(`rawFilter=${f.rawFilter}`);
+  parts.push(`sort=${f.sort}`, `preset=${f.preset}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  return `**Applied filters:** ${parts.join(', ')}`;
+}

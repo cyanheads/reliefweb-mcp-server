@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reliefwebListCountries = tool('reliefweb_list_countries', {
@@ -66,22 +67,54 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
   }),
   enrichment: {
     totalCount: z.number().describe('Total countries matching the filter before pagination.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Recovery hint when results are empty — echoes the active filter and suggests how to broaden. Absent on successful result pages.',
+      ),
   },
+  errors: [
+    {
+      reason: 'upstream_error',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      recovery:
+        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted before retrying.',
+    },
+  ],
 
   async handler(input, ctx) {
     ctx.log.info('reliefweb_list_countries', {
       crisisOnly: input.crisis_only,
       limit: input.limit,
     });
-    const result = await getReliefWebService().listCountries(
-      {
-        ...(input.crisis_only != null ? { crisisOnly: input.crisis_only } : {}),
-        limit: input.limit,
-        offset: input.offset,
-      },
-      ctx,
-    );
+    const result = await getReliefWebService()
+      .listCountries(
+        {
+          ...(input.crisis_only != null ? { crisisOnly: input.crisis_only } : {}),
+          limit: input.limit,
+          offset: input.offset,
+        },
+        ctx,
+      )
+      .catch((err: unknown) => {
+        throw ctx.fail('upstream_error', 'ReliefWeb API error while listing countries.', {
+          cause: err,
+          ...ctx.recoveryFor('upstream_error'),
+        });
+      });
+
     ctx.enrich.total(result.totalCount);
+
+    if (result.items.length === 0) {
+      ctx.enrich.notice(
+        input.crisis_only
+          ? 'No countries with an active humanitarian situation found (crisis_only=true). Set crisis_only=false to list all tracked countries.'
+          : 'No countries returned. This is unexpected for an unfiltered list — retry, or check whether an offset past the end of the list was supplied.',
+      );
+    }
+
     return { items: result.items };
   },
 

@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
@@ -95,6 +96,21 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
           .describe('A matching job listing.'),
       )
       .describe('Matching job listings.'),
+    appliedFilters: z
+      .object({
+        text: z.string().optional().describe('Full-text query the search used.'),
+        country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
+        source: z.string().optional().describe('Source short name filter applied.'),
+        careerCategory: z.string().optional().describe('Career category name filter applied.'),
+        theme: z.string().optional().describe('Theme name filter applied.'),
+        experience: z.string().optional().describe('Experience level filter applied.'),
+        sort: z.string().describe('Sort order the query used (resolved, including the default).'),
+        limit: z.number().describe('Result limit the query used.'),
+        offset: z.number().describe('Pagination offset the query used.'),
+      })
+      .describe(
+        'The resolved filter set the query actually ran with, after normalization and defaults. Echoes back so the agent can confirm how its inputs were interpreted.',
+      ),
   }),
   enrichment: {
     totalCount: z.number().describe('Total jobs matching the query before pagination.'),
@@ -105,6 +121,16 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
         'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
       ),
   },
+  errors: [
+    {
+      reason: 'upstream_error',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      recovery:
+        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted before retrying.',
+    },
+  ],
+
   async handler(input, ctx) {
     ctx.log.info('reliefweb_search_jobs', {
       text: input.text,
@@ -113,38 +139,62 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       limit: input.limit,
     });
 
-    const result = await getReliefWebService().searchJobs(
-      {
-        ...(input.text?.trim() ? { text: input.text } : {}),
-        ...(input.country?.trim() ? { country: input.country.toUpperCase() } : {}),
-        ...(input.source?.trim() ? { source: input.source } : {}),
-        ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
-        ...(input.theme?.trim() ? { theme: input.theme } : {}),
-        ...(input.experience?.trim() ? { experience: input.experience } : {}),
-        limit: input.limit,
-        offset: input.offset,
-      },
-      ctx,
-    );
+    const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+
+    const appliedFilters = {
+      ...(input.text?.trim() ? { text: input.text } : {}),
+      ...(country ? { country } : {}),
+      ...(input.source?.trim() ? { source: input.source } : {}),
+      ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
+      ...(input.theme?.trim() ? { theme: input.theme } : {}),
+      ...(input.experience?.trim() ? { experience: input.experience } : {}),
+      sort: 'date.created:desc',
+      limit: input.limit,
+      offset: input.offset,
+    };
+
+    const result = await getReliefWebService()
+      .searchJobs(
+        {
+          ...(input.text?.trim() ? { text: input.text } : {}),
+          ...(country ? { country } : {}),
+          ...(input.source?.trim() ? { source: input.source } : {}),
+          ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
+          ...(input.theme?.trim() ? { theme: input.theme } : {}),
+          ...(input.experience?.trim() ? { experience: input.experience } : {}),
+          limit: input.limit,
+          offset: input.offset,
+        },
+        ctx,
+      )
+      .catch((err: unknown) => {
+        throw ctx.fail('upstream_error', 'ReliefWeb API error while searching jobs.', {
+          cause: err,
+          ...ctx.recoveryFor('upstream_error'),
+        });
+      });
 
     ctx.enrich.total(result.totalCount);
 
     if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
-      if (input.country) filters.push(`country=${input.country}`);
+      if (country) filters.push(`country=${country}`);
+      if (input.source) filters.push(`source="${input.source}"`);
       if (input.career_category) filters.push(`career_category="${input.career_category}"`);
+      if (input.theme) filters.push(`theme="${input.theme}"`);
+      if (input.experience) filters.push(`experience="${input.experience}"`);
       ctx.enrich.notice(
         `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broader keywords, remove the country filter, or check the career category spelling.',
       );
     }
 
-    return { items: result.items };
+    return { items: result.items, appliedFilters };
   },
 
   format: (result) => {
-    const lines: string[] = [];
+    const lines: string[] = [renderAppliedFilters(result.appliedFilters)];
     for (const item of result.items) {
       lines.push(`\n## ${item.title}`);
       lines.push(`**ID:** ${item.id}`);
@@ -163,3 +213,30 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
     return [{ type: 'text', text: lines.join('\n') }];
   },
 });
+
+/**
+ * Render the resolved filter set as a single compact line. Every field is named so
+ * the `format-parity` lint sees each output key reflected in `content[]`, keeping the
+ * markdown surface in sync with `structuredContent` for content[]-only clients.
+ */
+function renderAppliedFilters(f: {
+  text?: string | undefined;
+  country?: string | undefined;
+  source?: string | undefined;
+  careerCategory?: string | undefined;
+  theme?: string | undefined;
+  experience?: string | undefined;
+  sort: string;
+  limit: number;
+  offset: number;
+}): string {
+  const parts: string[] = [];
+  if (f.text != null) parts.push(`text="${f.text}"`);
+  if (f.country != null) parts.push(`country=${f.country}`);
+  if (f.source != null) parts.push(`source="${f.source}"`);
+  if (f.careerCategory != null) parts.push(`careerCategory="${f.careerCategory}"`);
+  if (f.theme != null) parts.push(`theme="${f.theme}"`);
+  if (f.experience != null) parts.push(`experience="${f.experience}"`);
+  parts.push(`sort=${f.sort}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  return `**Applied filters:** ${parts.join(', ')}`;
+}

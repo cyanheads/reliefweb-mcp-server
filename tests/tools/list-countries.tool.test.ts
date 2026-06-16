@@ -3,6 +3,7 @@
  * @module tests/tools/list-countries.tool.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebListCountries } from '@/mcp-server/tools/definitions/list-countries.tool.js';
@@ -67,6 +68,49 @@ describe('reliefwebListCountries', () => {
       expect.objectContaining({ crisisOnly: true }),
       ctx,
     );
+  });
+
+  it('populates notice enrichment when crisis_only returns no countries', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListCountries.input.parse({ crisis_only: true });
+    const result = await reliefwebListCountries.handler(input, ctx);
+
+    expect(result.items).toHaveLength(0);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.totalCount).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toContain('crisis_only=true');
+    expect(enrichment.notice).toContain('crisis_only=false');
+  });
+
+  it('does not populate notice when countries are returned', async () => {
+    mockListCountries.mockResolvedValue({
+      items: [{ id: 1, name: 'Afghanistan', iso3: 'AFG' }],
+      totalCount: 1,
+    });
+
+    const ctx = createMockContext();
+    const input = reliefwebListCountries.input.parse({});
+    await reliefwebListCountries.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toBeUndefined();
+  });
+
+  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+    mockListCountries.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 502'),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
+    const input = reliefwebListCountries.input.parse({});
+
+    const err = await reliefwebListCountries.handler(input, ctx).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
+    expect((err as McpError).data).toHaveProperty('recovery.hint');
   });
 
   it('handles sparse country without iso3 or status', async () => {

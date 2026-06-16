@@ -3,6 +3,7 @@
  * @module tests/tools/search-training.tool.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchTraining } from '@/mcp-server/tools/definitions/search-training.tool.js';
@@ -63,6 +64,56 @@ describe('reliefwebSearchTraining', () => {
     expect(enrichment.notice).toContain('zzznomatch');
   });
 
+  it('empty-result notice echoes source, career_category, language, and date_start_to', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({
+      source: 'RedR',
+      career_category: 'Logistics and Telecommunications',
+      language: 'fr',
+      date_start_to: '2024-12-31T00:00:00+00:00',
+    });
+    await reliefwebSearchTraining.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('source="RedR"');
+    expect(notice).toContain('career_category="Logistics and Telecommunications"');
+    expect(notice).toContain('language=fr');
+    expect(notice).toContain('start_to=2024-12-31T00:00:00+00:00');
+  });
+
+  it('echoes appliedFilters with normalized country and resolved sort', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ country: 'som', format: 'E-learning' });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(result.appliedFilters).toMatchObject({
+      country: 'SOM',
+      format: 'E-learning',
+      sort: 'date.created:desc',
+      limit: 10,
+      offset: 0,
+    });
+  });
+
+  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+    mockSearchTraining.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400'),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
+    const input = reliefwebSearchTraining.input.parse({ text: 'wash' });
+
+    const err = await reliefwebSearchTraining.handler(input, ctx).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
+    expect((err as McpError).data).toHaveProperty('recovery.hint');
+  });
+
   it('passes date range filters correctly', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
@@ -113,10 +164,17 @@ describe('reliefwebSearchTraining', () => {
           urlAlias: 'https://reliefweb.int/training/test',
         },
       ],
+      appliedFilters: {
+        format: 'E-learning',
+        sort: 'date.created:desc',
+        limit: 10,
+        offset: 0,
+      },
     };
     const blocks = reliefwebSearchTraining.format!(output);
     expect(blocks[0].type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
+    expect(text).toContain('Applied filters:');
     expect(text).toContain('88888');
     expect(text).toContain('WASH Training');
     expect(text).toContain('UNICEF');

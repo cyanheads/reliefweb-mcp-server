@@ -114,6 +114,29 @@ describe('reliefwebSearchReports — edge cases', () => {
     expect(enrichment.notice).toContain('Situation Report');
   });
 
+  it('empty-result notice echoes the full filter set (language, source, dates, disaster_id)', async () => {
+    mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({
+      country: 'syr',
+      disaster_id: 42,
+      language: 'fr',
+      source: 'UNHCR',
+      date_from: '2024-01-01T00:00:00+00:00',
+      date_to: '2024-06-01T00:00:00+00:00',
+    });
+    await reliefwebSearchReports.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('country=SYR');
+    expect(notice).toContain('disaster_id=42');
+    expect(notice).toContain('language=fr');
+    expect(notice).toContain('source="UNHCR"');
+    expect(notice).toContain('date_from=2024-01-01T00:00:00+00:00');
+    expect(notice).toContain('date_to=2024-06-01T00:00:00+00:00');
+  });
+
   it('empty-result notice with no filters uses generic message', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
@@ -127,11 +150,18 @@ describe('reliefwebSearchReports — edge cases', () => {
     expect(enrichment.notice).toContain('the given filters');
   });
 
+  const defaultApplied = {
+    sort: 'date.original:desc',
+    preset: 'latest',
+    limit: 10,
+    offset: 0,
+  };
+
   it('format: formats empty items list gracefully', () => {
-    const output = { items: [] };
+    const output = { items: [], appliedFilters: defaultApplied };
     const blocks = reliefwebSearchReports.format!(output);
     expect(blocks[0].type).toBe('text');
-    // Empty list — text may be empty string or just whitespace, but no crash
+    // Empty list — only the applied-filters line, no crash, no undefined.
     expect((blocks[0] as { text: string }).text).toBeDefined();
     expect((blocks[0] as { text: string }).text).not.toContain('undefined');
   });
@@ -139,6 +169,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('format: item without fileUrls or headlineSummary renders without undefined', () => {
     const output = {
       items: [{ id: 1, title: 'Minimal Report' }],
+      appliedFilters: defaultApplied,
     };
     const blocks = reliefwebSearchReports.format!(output);
     const text = (blocks[0] as { text: string }).text;
@@ -153,6 +184,7 @@ describe('reliefwebSearchReports — edge cases', () => {
         { id: 1, title: 'Report One', sources: ['OCHA'] },
         { id: 2, title: 'Report Two', sources: ['WFP'] },
       ],
+      appliedFilters: defaultApplied,
     };
     const blocks = reliefwebSearchReports.format!(output);
     const text = (blocks[0] as { text: string }).text;
@@ -165,6 +197,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('format: handles unicode in titles without crashing', () => {
     const output = {
       items: [{ id: 1, title: 'Rapport d’urgence: Côte d’Ivoire — 快报' }],
+      appliedFilters: defaultApplied,
     };
     const blocks = reliefwebSearchReports.format!(output);
     const text = (blocks[0] as { text: string }).text;
