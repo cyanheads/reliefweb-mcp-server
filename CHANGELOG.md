@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.11](changelog/0.1.x/0.1.11.md) — 2026-06-15
+
+Typed upstream_error contracts on all six search/list tools; appliedFilters echo and complete empty-result notices across the four search tools; notice enrichment on both list tools
+
 ## [0.1.10](changelog/0.1.x/0.1.10.md) — 2026-06-15
 
 Server-level instructions on initialize; plugin manifest display identity unscoped to the hyphenated repo name; vitest ^4.1.9
