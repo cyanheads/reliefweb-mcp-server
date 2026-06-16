@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/reliefweb-mcp-server",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "mcpName": "io.github.cyanheads/reliefweb-mcp-server",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "type": "module",
@@ -97,6 +97,6 @@
     "tsc-alias": "^1.8.17",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }

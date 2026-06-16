@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "reliefweb-mcp-server",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads" },
   "repository": {
