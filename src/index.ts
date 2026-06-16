@@ -26,6 +26,8 @@ import { initReliefWebService } from './services/reliefweb/reliefweb-service.js'
 await createApp({
   name: 'reliefweb-mcp-server',
   title: 'reliefweb-mcp-server',
+  instructions:
+    'Use the reliefweb_* tools to query ReliefWeb (OCHA humanitarian data) for reports, disasters, countries, jobs, and training. A pre-approved RELIEFWEB_APP_NAME is required. Countries use ISO3 codes (e.g. SYR), reports and disasters use numeric IDs, and organizations use a shortname (e.g. WFP). Workflow: reliefweb_search_reports / reliefweb_search_disasters return summaries (report body excluded), then reliefweb_get_report / reliefweb_get_disaster fetch full text; a disaster ID also feeds the disaster_id report filter. Quota: 1,000 calls/day.',
   tools: [
     reliefwebSearchReports,
     reliefwebGetReport,
