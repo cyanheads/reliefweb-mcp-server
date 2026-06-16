@@ -1,6 +1,6 @@
 {
-  "name": "@cyanheads/reliefweb-mcp-server",
-  "version": "0.1.9",
+  "name": "reliefweb-mcp-server",
+  "version": "0.1.10",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
@@ -13,7 +13,7 @@
   "keywords": ["mcp", "mcp-server", "model-context-protocol", "reliefweb", "humanitarian", "disasters"],
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
-    "displayName": "@cyanheads/reliefweb-mcp-server",
+    "displayName": "reliefweb-mcp-server",
     "shortDescription": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP.",
     "longDescription": "",
     "developerName": "cyanheads",

@@ -1,6 +1,6 @@
 {
-  "name": "@cyanheads/reliefweb-mcp-server",
-  "version": "0.1.9",
+  "name": "reliefweb-mcp-server",
+  "version": "0.1.10",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads"
@@ -9,7 +9,7 @@
   "repository": "https://github.com/cyanheads/reliefweb-mcp-server",
   "license": "Apache-2.0",
   "mcpServers": {
-    "@cyanheads/reliefweb-mcp-server": {
+    "reliefweb-mcp-server": {
       "command": "npx",
       "args": ["-y", "@cyanheads/reliefweb-mcp-server"],
       "env": {
