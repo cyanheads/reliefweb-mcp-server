@@ -1,6 +1,6 @@
 {
   "name": "reliefweb-mcp-server",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "reliefweb-mcp-server",
     "shortDescription": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP.",
-    "longDescription": "",
+    "longDescription": "Read-only access to ReliefWeb (UN OCHA), the humanitarian information service for crises and emergencies. Search reports, disasters, jobs, and training, fetch full records by ID, and list reference countries and source organizations. Search tools return summaries (report body excluded); the get tools fetch full text, and a disaster ID feeds the report disaster_id filter to pull a crisis's coverage. Countries use ISO3 codes (e.g. SYR), reports and disasters use numeric IDs, organizations use a shortname (e.g. WFP). Requires a pre-approved RELIEFWEB_APP_NAME; quota is 1,000 calls/day. Runs over STDIO or Streamable HTTP.",
     "developerName": "cyanheads",
     "category": "",
     "capabilities": ["Read"],

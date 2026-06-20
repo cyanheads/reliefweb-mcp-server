@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-06-13 03:40:40
+Generated on: 2026-06-20 18:07:13
 
 ```text
 reliefweb-mcp-server/
@@ -27,6 +27,7 @@ reliefweb-mcp-server/
 ├── scripts/
 │   ├── build-changelog.ts
 │   ├── build.ts
+│   ├── check-dependency-specifiers.ts
 │   ├── check-docs-sync.ts
 │   ├── check-framework-antipatterns.ts
 │   ├── check-skill-versions.ts

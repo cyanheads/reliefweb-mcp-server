@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.12](changelog/0.1.x/0.1.12.md) — 2026-06-20
+
+mcp-ts-core ^0.10.9 maintenance: dependency-specifier + plugin-manifest devcheck guards, fresh-scaffold devcheck fixes, vendored framework skill sync
+
 ## [0.1.11](changelog/0.1.x/0.1.11.md) — 2026-06-15
 
 Typed upstream_error contracts on all six search/list tools; appliedFilters echo and complete empty-result notices across the four search tools; notice enrichment on both list tools
