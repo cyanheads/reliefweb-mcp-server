@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.13-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.14-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.14-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -86,9 +86,9 @@ Search active and historical disasters on ReliefWeb.
 Fetch a disaster record by ReliefWeb numeric ID with full details.
 
 - Full description, profile overview, affected countries, and GLIDE number
-- Curated key content links from the ReliefWeb editorial team
-- Active appeals and response plans linked to the disaster
-- Useful external links curated by ReliefWeb editors
+- Currently-active curated key content links from the ReliefWeb editorial team (the present set, not the full archive)
+- Currently-active appeals and response plans linked to the disaster
+- Currently-active useful external links curated by ReliefWeb editors
 
 ---
 
@@ -97,9 +97,9 @@ Fetch a disaster record by ReliefWeb numeric ID with full details.
 Fetch a country profile from ReliefWeb by ISO3 code.
 
 - Situation overview text curated by OCHA editors
-- Key content links maintained by ReliefWeb editors
-- Active humanitarian appeals and response plans
-- Useful external links for the country
+- Currently-active key content links maintained by ReliefWeb editors (the present curated set, not the full archive)
+- Currently-active humanitarian appeals and response plans
+- Currently-active useful external links for the country
 - Country profiles are the authoritative situation summary for humanitarian responders
 
 ---
@@ -121,6 +121,7 @@ Search humanitarian job listings on ReliefWeb.
 - Filtering by country, organization short name, career category, theme, and experience level
 - Career category values: Programme and Project Management, Information and Communications Technology, Logistics and Telecommunications, and others
 - Returns current open positions — archived jobs excluded by default
+- Sortable by newest posting (`date.created:desc`, default) or soonest closing (`date.closing:asc`)
 - Pagination with closing date and canonical URL per listing
 
 ---
@@ -132,6 +133,7 @@ Search humanitarian training and learning opportunities.
 - Covers on-site and online capacity-building events
 - Filtering by country, source, format, career category, and language
 - Date range filtering on training start date (`date_start_from` / `date_start_to`)
+- Ordered by soonest start date by default (`date.start:asc`); override with `sort`
 - Distinct from report date fields — uses `date.start` / `date.end`
 
 ---
