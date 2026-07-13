@@ -30,7 +30,7 @@ describe('reliefwebSearchTraining', () => {
         sources: ['UNHCR'],
         countries: ['Kenya'],
         themes: ['Shelter and NFI'],
-        formats: ['Workshop'],
+        formats: ['on-site'],
         languages: ['en'],
         careerCategories: ['Programme and Project Management'],
         urlAlias: 'https://reliefweb.int/training/test',
@@ -39,12 +39,19 @@ describe('reliefwebSearchTraining', () => {
     mockSearchTraining.mockResolvedValue({ items, totalCount: 1 });
 
     const ctx = createMockContext();
-    const input = reliefwebSearchTraining.input.parse({ format: 'Workshop', limit: 5 });
+    const input = reliefwebSearchTraining.input.parse({ format: 'on-site', limit: 5 });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ id: 88888, title: 'Emergency Shelter Training' });
     expect(getEnrichment(ctx).totalCount).toBe(1);
+  });
+
+  it('rejects a format outside the ReliefWeb taxonomy at input validation', () => {
+    // The only real format.name values are on-site and online — the enum rejects
+    // Workshop/E-learning/Conference/Seminar at parse time.
+    expect(() => reliefwebSearchTraining.input.parse({ format: 'Workshop' })).toThrow();
+    expect(() => reliefwebSearchTraining.input.parse({ format: 'E-learning' })).toThrow();
   });
 
   it('populates notice enrichment when no training matches', async () => {
@@ -53,7 +60,7 @@ describe('reliefwebSearchTraining', () => {
     const ctx = createMockContext();
     const input = reliefwebSearchTraining.input.parse({
       text: 'zzznomatch',
-      format: 'NonexistentFormat',
+      format: 'online',
     });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -87,12 +94,12 @@ describe('reliefwebSearchTraining', () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
-    const input = reliefwebSearchTraining.input.parse({ country: 'som', format: 'E-learning' });
+    const input = reliefwebSearchTraining.input.parse({ country: 'som', format: 'online' });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
     expect(result.appliedFilters).toMatchObject({
       country: 'SOM',
-      format: 'E-learning',
+      format: 'online',
       sort: 'date.created:desc',
       limit: 10,
       offset: 0,
@@ -153,7 +160,7 @@ describe('reliefwebSearchTraining', () => {
           id: 88888,
           title: 'WASH Training',
           sources: ['UNICEF'],
-          formats: ['E-learning'],
+          formats: ['online'],
           countries: ['Somalia'],
           careerCategories: ['Water Sanitation and Hygiene'],
           languages: ['en'],
@@ -165,7 +172,7 @@ describe('reliefwebSearchTraining', () => {
         },
       ],
       appliedFilters: {
-        format: 'E-learning',
+        format: 'online',
         sort: 'date.created:desc',
         limit: 10,
         offset: 0,
@@ -178,7 +185,7 @@ describe('reliefwebSearchTraining', () => {
     expect(text).toContain('88888');
     expect(text).toContain('WASH Training');
     expect(text).toContain('UNICEF');
-    expect(text).toContain('E-learning');
+    expect(text).toContain('online');
     expect(text).toContain('2024-06-01');
     expect(text).toContain('2024-06-30');
   });

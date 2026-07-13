@@ -19,7 +19,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       .boolean()
       .optional()
       .describe(
-        'When true, filters to countries with an active humanitarian situation (status alert or current). Default false returns all countries.',
+        'When true, filters to countries with an active humanitarian situation (status ongoing). Default false returns all countries.',
       ),
     limit: z
       .number()
@@ -54,7 +54,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
               .string()
               .optional()
               .describe(
-                'Humanitarian situation status. Active situations have status alert or current.',
+                'Humanitarian situation status: ongoing (active crisis) or normal (non-crisis).',
               ),
             urlAlias: z
               .string()

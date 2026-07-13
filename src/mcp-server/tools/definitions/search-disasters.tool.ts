@@ -24,7 +24,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       .string()
       .optional()
       .describe(
-        'ISO 3166-1 alpha-3 country code (e.g., SYR, AFG, UKR). Filters to disasters tagged with this primary country.',
+        'ISO 3166-1 alpha-3 country code (e.g., SYR, AFG, UKR). Filters to disasters tagged with this country.',
       ),
     disaster_type: z
       .string()

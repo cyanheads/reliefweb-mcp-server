@@ -117,7 +117,9 @@ The `format` filter for reports uses these names: `Situation Report`, `Assessmen
 | `disaster.id` | reports | Link reports to a disaster (integer ID) |
 | `glide` | disasters | GLIDE number (global disaster ID) |
 | `type.name` | disasters, jobs, sources | Disaster type (`type.name`), job type (`type.name`), org type (`type.name`); for disasters also `primary_type.name` for primary disaster type |
-| `status` | reports, jobs, training, countries, sources, disasters | Disaster status values: `alert`, `current`, `past`, `alert-archive`, `archive`. Filter directly: `{"field": "status", "value": ["alert", "current"]}`. Presets already set defaults — use explicit filter only when overriding. |
+| `status` (disasters) | disasters | `alert`, `current`, `past`, `alert-archive`, `archive`. Filter directly: `{"field": "status", "value": ["alert", "current"]}`. Presets already set defaults — use explicit filter only when overriding. |
+| `status` (countries) | countries | `ongoing` (active crisis) or `normal` (non-crisis). `crisis_only=true` filters to `ongoing`. |
+| `status` (sources) | sources | `active` or `inactive`. |
 | `date.original` | reports | Source publication date |
 | `date.created` | all | ReliefWeb index date |
 | `source.shortname` | reports, jobs, training | Organization abbreviation |
@@ -180,12 +182,12 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | `reliefweb_search_disasters` | `status` | Disaster status filter. Values: `alert` (newly declared), `current` (ongoing), `past` (resolved), `alert-archive`, `archive`. Default preset includes `alert`, `current`, `past`. Pass `include_archived: true` for full historical set. |
 | `reliefweb_search_disasters` | `glide` | GLIDE number (global disaster identifier, e.g., `EQ-2023-000053-TUR`). Use for cross-system disaster correlation. |
 | `reliefweb_get_country` | `iso3` | ISO 3166-1 alpha-3 country code (e.g., `SYR`, `AFG`, `UKR`). Used to look up the country's ReliefWeb profile. |
-| `reliefweb_list_countries` | `crisis_only` | When true, filters to countries with an active humanitarian situation (status not empty/inactive). |
+| `reliefweb_list_countries` | `crisis_only` | When true, filters to countries with an active humanitarian situation (status `ongoing`). |
 | `reliefweb_search_jobs` | `career_category` | Humanitarian career track (e.g., `Programme and Project Management`, `Information and Communications Technology`, `Logistics and Telecommunications`). Filters on `career_categories.name`. |
 | `reliefweb_search_jobs` | `experience` | Experience level (e.g., `0-2 years`, `3-4 years`, `5-9 years`). Filters on `experience.name`. |
 | `reliefweb_search_training` | `date_start_from` | Training start date lower bound (ISO 8601). Filters on `date.start` — use to find training starting after a given date. |
 | `reliefweb_search_training` | `date_start_to` | Training start date upper bound (ISO 8601). Filters on `date.start` — pair with `date_start_from` for a window. |
-| `reliefweb_list_sources` | `type` | Organization type (e.g., `Government`, `International Organization`, `NGO`, `Academia`). Filters on `type.name`. |
+| `reliefweb_list_sources` | `type` | Organization type. One of: `Non-governmental Organization`, `International Organization`, `Academic and Research Institution`, `Other`, `Government`, `Media`, `Red Cross/Red Crescent Movement`. Filters on `type.name`. |
 
 ---
 

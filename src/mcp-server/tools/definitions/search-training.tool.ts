@@ -11,7 +11,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
   title: 'Search ReliefWeb Training',
   description:
     'Search humanitarian training and learning opportunities on ReliefWeb by country, format, date, source, career category, and language. ' +
-    'Covers workshops, e-learning, conferences, and other capacity-building events. ' +
+    'Covers on-site and online capacity-building events. ' +
     'Training date fields use date.start / date.end — different from report date fields. ' +
     'Use date_start_from and date_start_to to find upcoming training within a window.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
@@ -28,11 +28,9 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ),
     source: z.string().optional().describe('Organization short name. Filters on source.shortname.'),
     format: z
-      .string()
+      .enum(['on-site', 'online'])
       .optional()
-      .describe(
-        'Training format (e.g., Workshop, E-learning, Conference, Seminar). Filters on format.name.',
-      ),
+      .describe('Training format. Valid values: on-site, online. Filters on format.name.'),
     career_category: z
       .string()
       .optional()

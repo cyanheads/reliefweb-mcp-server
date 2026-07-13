@@ -57,11 +57,21 @@ describe('reliefwebListSources', () => {
     );
   });
 
+  it('rejects a type outside the ReliefWeb taxonomy at input validation', () => {
+    // "United Nations" and "Academia" are not real type.name values — the enum
+    // rejects them at parse time instead of returning a confusing empty page.
+    expect(() => reliefwebListSources.input.parse({ type: 'United Nations' })).toThrow();
+    expect(() => reliefwebListSources.input.parse({ type: 'Academia' })).toThrow();
+  });
+
   it('populates notice enrichment echoing type and text when no sources match', async () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
-    const input = reliefwebListSources.input.parse({ text: 'zzz', type: 'Academia' });
+    const input = reliefwebListSources.input.parse({
+      text: 'zzz',
+      type: 'Academic and Research Institution',
+    });
     const result = await reliefwebListSources.handler(input, ctx);
 
     expect(result.items).toHaveLength(0);
@@ -69,7 +79,7 @@ describe('reliefwebListSources', () => {
     expect(enrichment.totalCount).toBe(0);
     expect(enrichment.notice).toBeDefined();
     expect(enrichment.notice).toContain('text="zzz"');
-    expect(enrichment.notice).toContain('type="Academia"');
+    expect(enrichment.notice).toContain('type="Academic and Research Institution"');
   });
 
   it('does not populate notice when sources are returned', async () => {
@@ -91,7 +101,7 @@ describe('reliefwebListSources', () => {
     );
 
     const ctx = createMockContext({ errors: reliefwebListSources.errors });
-    const input = reliefwebListSources.input.parse({ type: 'United Nations' });
+    const input = reliefwebListSources.input.parse({ type: 'International Organization' });
 
     const err = await reliefwebListSources.handler(input, ctx).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(McpError);

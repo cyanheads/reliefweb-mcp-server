@@ -400,3 +400,83 @@ describe('ReliefWebService.listSources — type field normalization', () => {
     expect(result.items[0]?.types).toBeUndefined();
   });
 });
+
+// ─── Issues #8, #10, #11: outgoing POST-body request shape ────────────────────
+// The tool-layer tests mock ReliefWebService entirely, so a regression in the
+// filter field names is only catchable here, at the service boundary that builds
+// the actual ReliefWeb query.
+
+describe('ReliefWebService — search request shape', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const emptyPage = {
+    count: 0,
+    data: [],
+    status: 200,
+    time: 0.01,
+    totalCount: 0,
+    self: 'https://api.reliefweb.int/v2/x',
+  };
+
+  /** Parse the JSON POST body sent to the ReliefWeb API on the most recent fetch call. */
+  function lastPostedQuery(): {
+    filter?: unknown;
+    query?: { value?: string; fields?: string[]; operator?: string };
+  } {
+    const call = vi.mocked(globalThis.fetch).mock.calls.at(-1);
+    const init = call?.[1] as RequestInit | undefined;
+    return JSON.parse(String(init?.body)) as {
+      filter?: unknown;
+      query?: { value?: string; fields?: string[]; operator?: string };
+    };
+  }
+
+  it('searchReports filters country on country.iso3 (any tagged country), not primary_country.iso3', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchReports({ country: 'SYR' }, createMockContext());
+
+    const filter = lastPostedQuery().filter;
+    expect(filter).toEqual({ field: 'country.iso3', value: 'SYR' });
+    expect(JSON.stringify(filter)).not.toContain('primary_country');
+  });
+
+  it('searchDisasters filters country on country.iso3 (any tagged country), not primary_country.iso3', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchDisasters({ country: 'SYR' }, createMockContext());
+
+    const filter = lastPostedQuery().filter;
+    expect(filter).toEqual({ field: 'country.iso3', value: 'SYR' });
+    expect(JSON.stringify(filter)).not.toContain('primary_country');
+  });
+
+  it('listSources text search queries the name and shortname fields', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().listSources({ text: 'WFP' }, createMockContext());
+
+    const query = lastPostedQuery().query;
+    expect(query?.value).toBe('WFP');
+    expect(query?.fields).toEqual(['name', 'shortname']);
+  });
+
+  it('listCountries crisis_only filters status on ongoing, not the legacy alert/current alias', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().listCountries({ crisisOnly: true }, createMockContext());
+
+    const filter = lastPostedQuery().filter;
+    expect(filter).toMatchObject({ field: 'status', value: ['ongoing'] });
+    expect(JSON.stringify(filter)).not.toContain('alert');
+    expect(JSON.stringify(filter)).not.toContain('current');
+  });
+});

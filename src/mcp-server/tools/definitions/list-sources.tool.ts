@@ -20,10 +20,18 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       .optional()
       .describe('Full-text search query. Matches against organization name and short name.'),
     type: z
-      .string()
+      .enum([
+        'Non-governmental Organization',
+        'International Organization',
+        'Academic and Research Institution',
+        'Other',
+        'Government',
+        'Media',
+        'Red Cross/Red Crescent Movement',
+      ])
       .optional()
       .describe(
-        'Organization type. Must match exact API values: "Government", "International Organization", "Non-governmental Organization", "Academia", "United Nations", "Other". Filters on type.name.',
+        'Organization type. One of: Non-governmental Organization, International Organization, Academic and Research Institution, Other, Government, Media, Red Cross/Red Crescent Movement. Filters on type.name.',
       ),
     limit: z
       .number()
@@ -111,11 +119,20 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
 
     if (result.items.length === 0) {
       const filters: string[] = [];
-      if (input.text) filters.push(`text="${input.text}"`);
-      if (input.type) filters.push(`type="${input.type}"`);
+      const suggestions: string[] = [];
+      if (input.text) {
+        filters.push(`text="${input.text}"`);
+        suggestions.push('broaden or remove the text filter');
+      }
+      if (input.type) {
+        filters.push(`type="${input.type}"`);
+        suggestions.push('try a different organization type');
+      }
       ctx.enrich.notice(
         `No sources matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Remove the text filter or check that type is an exact API value (e.g. "Non-governmental Organization", "United Nations").',
+          (suggestions.length > 0
+            ? `Try to ${suggestions.join(', or ')}.`
+            : 'Try removing filters or paging with a smaller offset.'),
       );
     }
 

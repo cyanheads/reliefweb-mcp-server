@@ -255,7 +255,7 @@ export class ReliefWebService {
     ctx.log.debug('searchReports', { params });
 
     const conditions: FilterCondition[] = [];
-    if (params.country) conditions.push({ field: 'primary_country.iso3', value: params.country });
+    if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
     if (params.disasterId) conditions.push({ field: 'disaster.id', value: params.disasterId });
     if (params.format) conditions.push({ field: 'format.name', value: params.format });
     if (params.theme) conditions.push({ field: 'theme.name', value: params.theme });
@@ -311,7 +311,7 @@ export class ReliefWebService {
     ctx.log.debug('searchDisasters', { params });
 
     const conditions: FilterCondition[] = [];
-    if (params.country) conditions.push({ field: 'primary_country.iso3', value: params.country });
+    if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
     if (params.disasterType) conditions.push({ field: 'type.name', value: params.disasterType });
     if (params.status) {
       const values = params.status
@@ -378,7 +378,7 @@ export class ReliefWebService {
 
     const conditions: FilterCondition[] = [];
     if (params.crisisOnly) {
-      conditions.push({ field: 'status', value: ['alert', 'current'], operator: 'OR' });
+      conditions.push({ field: 'status', value: ['ongoing'], operator: 'OR' });
     }
 
     const filter = this.buildAndFilter(conditions);
@@ -508,7 +508,9 @@ export class ReliefWebService {
       limit: params.limit ?? 10,
       offset: params.offset ?? 0,
     };
-    if (params.text) query.query = { value: params.text, operator: 'AND' };
+    if (params.text) {
+      query.query = { value: params.text, operator: 'AND', fields: ['name', 'shortname'] };
+    }
 
     const result = await this.post<RawSourceFields>('sources', query, ctx);
     return {
