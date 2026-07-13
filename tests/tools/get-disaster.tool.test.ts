@@ -54,6 +54,45 @@ describe('reliefwebGetDisaster', () => {
     expect(result.appealsResponsePlans).toHaveLength(1);
   });
 
+  it('surfaces the active-scoped profile links the service returns (active/archive selection lives in the service)', async () => {
+    const disaster = {
+      id: 55555,
+      name: 'Turkey: Earthquake 2023',
+      keyContent: [{ title: 'Active Key', url: 'https://reliefweb.int/key' }],
+      appealsResponsePlans: [
+        { title: 'Flash Appeal 2023', url: 'https://reliefweb.int/appeal', date: '2023-02-20' },
+      ],
+      usefulLinks: [{ title: 'UNHCR Response', url: 'https://unhcr.org/turkey' }],
+    };
+    mockGetDisaster.mockResolvedValue(disaster);
+
+    const ctx = createMockContext({ errors: reliefwebGetDisaster.errors });
+    const input = reliefwebGetDisaster.input.parse({ id: 55555 });
+    const result = await reliefwebGetDisaster.handler(input, ctx);
+
+    expect(result.keyContent).toEqual(disaster.keyContent);
+    expect(result.appealsResponsePlans).toEqual(disaster.appealsResponsePlans);
+    expect(result.usefulLinks).toEqual(disaster.usefulLinks);
+  });
+
+  it('returns large description and profileOverview intact — the size guard is advisory, not truncation (mirrors get_report)', async () => {
+    const bigDescription = 'x'.repeat(40_000);
+    const bigOverview = 'y'.repeat(32_000);
+    mockGetDisaster.mockResolvedValue({
+      id: 51470,
+      name: 'Major Disaster',
+      description: bigDescription,
+      profileOverview: bigOverview,
+    });
+
+    const ctx = createMockContext({ errors: reliefwebGetDisaster.errors });
+    const input = reliefwebGetDisaster.input.parse({ id: 51470 });
+    const result = await reliefwebGetDisaster.handler(input, ctx);
+
+    expect(result.description).toHaveLength(40_000);
+    expect(result.profileOverview).toHaveLength(32_000);
+  });
+
   it('throws not_found when disaster does not exist', async () => {
     mockGetDisaster.mockResolvedValue(null);
 

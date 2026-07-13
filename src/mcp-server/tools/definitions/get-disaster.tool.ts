@@ -12,7 +12,8 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
   description:
     'Fetch a disaster record by ReliefWeb numeric ID including description, affected countries, GLIDE number, ' +
     'profile overview, key content links, and active appeals or response plans. ' +
-    'Use after reliefweb_search_disasters to retrieve full details.',
+    'Use after reliefweb_search_disasters to retrieve full details. ' +
+    'Description and profile overview can together run to tens of KB for major disasters; call this only when you need the full narrative text.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
@@ -48,7 +49,9 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
           .describe('A curated key content link.'),
       )
       .optional()
-      .describe('Curated key content links from the ReliefWeb editorial team.'),
+      .describe(
+        'Currently-active curated key content links from the ReliefWeb editorial team — the present curated set, not the full historical archive.',
+      ),
     appealsResponsePlans: z
       .array(
         z
@@ -60,7 +63,9 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
           .describe('An appeal or response plan entry.'),
       )
       .optional()
-      .describe('Active appeals and response plans linked to this disaster.'),
+      .describe(
+        'Currently-active appeals and response plans linked to this disaster — the present set, not the full historical archive.',
+      ),
     usefulLinks: z
       .array(
         z
@@ -71,7 +76,9 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
           .describe('A useful external link.'),
       )
       .optional()
-      .describe('Useful external links curated by ReliefWeb editors.'),
+      .describe(
+        'Currently-active useful external links curated by ReliefWeb editors — the present set, not the full historical archive.',
+      ),
   }),
   errors: [
     {

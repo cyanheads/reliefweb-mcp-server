@@ -100,10 +100,24 @@ describe('reliefwebSearchTraining', () => {
     expect(result.appliedFilters).toMatchObject({
       country: 'SOM',
       format: 'online',
-      sort: 'date.created:desc',
+      sort: 'date.start:asc',
       limit: 10,
       offset: 0,
     });
+  });
+
+  it('threads an explicit sort into the service call and echoes it in appliedFilters', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ sort: 'date.start:desc' });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(mockSearchTraining).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'date.start:desc' }),
+      ctx,
+    );
+    expect(result.appliedFilters.sort).toBe('date.start:desc');
   });
 
   it('throws ctx.fail("upstream_error") when the service rejects', async () => {
@@ -173,7 +187,7 @@ describe('reliefwebSearchTraining', () => {
       ],
       appliedFilters: {
         format: 'online',
-        sort: 'date.created:desc',
+        sort: 'date.start:asc',
         limit: 10,
         offset: 0,
       },

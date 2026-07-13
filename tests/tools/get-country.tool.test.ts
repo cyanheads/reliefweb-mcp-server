@@ -41,6 +41,32 @@ describe('reliefwebGetCountry', () => {
     expect(result).toMatchObject({ id: 10001, name: 'Syrian Arab Republic', iso3: 'SYR' });
   });
 
+  it('surfaces the active-scoped profile links the service returns (active/archive selection lives in the service)', async () => {
+    const country = {
+      id: 10001,
+      name: 'Syrian Arab Republic',
+      iso3: 'SYR',
+      keyContent: [
+        { title: 'Active Key 1', url: 'https://reliefweb.int/k1' },
+        { title: 'Active Key 2', url: 'https://reliefweb.int/k2' },
+      ],
+      appealsResponsePlans: [
+        { title: 'HRP 2024', url: 'https://reliefweb.int/hrp', date: '2024-01-01' },
+      ],
+      usefulLinks: [{ title: 'OCHA Syria', url: 'https://ocha.org/syria' }],
+    };
+    mockGetCountry.mockResolvedValue(country);
+
+    const ctx = createMockContext({ errors: reliefwebGetCountry.errors });
+    const input = reliefwebGetCountry.input.parse({ iso3: 'SYR' });
+    const result = await reliefwebGetCountry.handler(input, ctx);
+
+    // Tool passes the service's active-only payload through unchanged — no re-expansion, no capping.
+    expect(result.keyContent).toEqual(country.keyContent);
+    expect(result.appealsResponsePlans).toEqual(country.appealsResponsePlans);
+    expect(result.usefulLinks).toEqual(country.usefulLinks);
+  });
+
   it('normalizes ISO3 code to uppercase before lookup', async () => {
     mockGetCountry.mockResolvedValue({ id: 10001, name: 'Syrian Arab Republic', iso3: 'SYR' });
 

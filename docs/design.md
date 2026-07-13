@@ -12,8 +12,8 @@
 | `reliefweb_get_disaster` | Fetch a disaster record by ID including description, affected countries, and linked key content. | `id` | `readOnlyHint: true` |
 | `reliefweb_get_country` | Fetch a country profile with overview, humanitarian situation summary, key content links, and active appeals/response plans. | `iso3` | `readOnlyHint: true` |
 | `reliefweb_list_countries` | List all countries and territories tracked by ReliefWeb, optionally filtered by crisis status. | `crisis_only`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and theme. | `text`, `country`, `source`, `career_category`, `theme`, `experience`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_search_training` | Search humanitarian training and learning opportunities by country, format, date, source, and career category. | `text`, `country`, `source`, `format`, `career_category`, `language`, `date_start_from`, `date_start_to`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and theme. | `text`, `country`, `source`, `career_category`, `theme`, `experience`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_search_training` | Search humanitarian training and learning opportunities by country, format, date, source, and career category. | `text`, `country`, `source`, `format`, `career_category`, `language`, `date_start_from`, `date_start_to`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
 | `reliefweb_list_sources` | Browse source organizations that contribute content to ReliefWeb, optionally filtered by name or type. | `text`, `type`, `limit`, `offset` | `readOnlyHint: true` |
 
 ### Resources
@@ -150,11 +150,11 @@ Country profiles contain nested `profile` subfields with key content sections. A
 |:--|:-----|:--------|
 | 1 | `POST /v2/countries` with `{"filter": {"field": "iso3", "value": "<iso3>"}, "profile": "full"}` | Fetch full country profile with all sub-fields |
 
-The `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links` sub-arrays contain the curated links ReliefWeb maintains for the country — worth surfacing directly rather than forcing a separate reports search.
+The `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links` sub-arrays contain the curated links ReliefWeb maintains for the country — worth surfacing directly rather than forcing a separate reports search. Only the currently-active links are surfaced from each sub-array; the `archive` halves (which run to thousands of entries for long-running crises — SYR carries 2,300+ archived `key_content` links) are dropped to keep the payload within the client token budget.
 
 ### `reliefweb_get_disaster` — disaster with linked content
 
-One GET (`GET /v2/disasters/{id}?appname={name}&profile=full`); the `profile` sub-object on disasters contains the same key content structure as country profiles (`profile.overview`, `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links`).
+One GET (`GET /v2/disasters/{id}?appname={name}&profile=full`); the `profile` sub-object on disasters contains the same key content structure as country profiles (`profile.overview`, `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links`). As with `reliefweb_get_country`, only the currently-active links in each sub-array are surfaced (the `archive` halves are dropped). The `description` and `profile.overview` prose can together run to tens of KB for major disasters; like `reliefweb_get_report`'s body, it's returned in full, so call this only when the narrative text is needed.
 
 ---
 
@@ -185,8 +185,10 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | `reliefweb_list_countries` | `crisis_only` | When true, filters to countries with an active humanitarian situation (status `ongoing`). |
 | `reliefweb_search_jobs` | `career_category` | Humanitarian career track (e.g., `Programme and Project Management`, `Information and Communications Technology`, `Logistics and Telecommunications`). Filters on `career_categories.name`. |
 | `reliefweb_search_jobs` | `experience` | Experience level (e.g., `0-2 years`, `3-4 years`, `5-9 years`). Filters on `experience.name`. |
+| `reliefweb_search_jobs` | `sort` | Sort order. `date.created:desc` for newest postings first (default), `date.closing:asc` to surface roles closing soonest, `score:desc` for relevance. |
 | `reliefweb_search_training` | `date_start_from` | Training start date lower bound (ISO 8601). Filters on `date.start` — use to find training starting after a given date. |
 | `reliefweb_search_training` | `date_start_to` | Training start date upper bound (ISO 8601). Filters on `date.start` — pair with `date_start_from` for a window. |
+| `reliefweb_search_training` | `sort` | Sort order. `date.start:asc` for soonest-starting first (default), `date.start:desc` for latest-starting, `date.created:desc` for most recently posted, `score:desc` for relevance. |
 | `reliefweb_list_sources` | `type` | Organization type. One of: `Non-governmental Organization`, `International Organization`, `Academic and Research Institution`, `Other`, `Government`, `Media`, `Red Cross/Red Crescent Movement`. Filters on `type.name`. |
 
 ---
@@ -339,3 +341,5 @@ GET https://api.reliefweb.int/v2/{content_type}/{id}?appname={name}&profile=full
 | 2026-05-23 | Facets deferred | Powerful for analysis but adds query complexity not yet justified by a clear agent workflow. Can be added as `reliefweb_facets` if research use cases emerge. |
 | 2026-05-23 | Crisis briefing as Prompt, not instruction tool | Briefing structure is a reusable template for guiding LLM tool-use, not a state-inspecting advisor. Prompts are the right primitive; no live server state needed. |
 | 2026-05-23 | Body field excluded from search results | Report bodies can be 10–100KB each. Fetching body in list queries would exhaust context budget rapidly. Agents call `get_report` for document content when needed. |
+| 2026-07-13 | Country/disaster profile sub-arrays surface the active set only, not active+archive | The `profile.key_content` / `appeals_response_plans` / `useful_links` `archive` halves run to thousands of entries for long-running crises (SYR merged to 381KB, exceeding the client token limit). `keyContent` should reflect what ReliefWeb currently curates, not its full history — active-only is a ~78x reduction for SYR. Capping-to-N or pagination add complexity the numbers don't justify. |
+| 2026-07-13 | `sort` exposed on `search_jobs` and `search_training`; training defaults to `date.start:asc` | Reports/disasters already exposed `sort`; jobs/training hardcoded `date.created:desc` with no input, so `appliedFilters.sort` never reflected a real value. Training is documented for finding upcoming training, so its default becomes soonest-starting (`date.start:asc`); jobs keep newest-posted (`date.created:desc`). |

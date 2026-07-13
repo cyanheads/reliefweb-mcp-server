@@ -42,7 +42,9 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
           .describe('A curated key content link.'),
       )
       .optional()
-      .describe('Curated key content links maintained by ReliefWeb editors.'),
+      .describe(
+        'Currently-active curated key content links maintained by ReliefWeb editors — the present curated set, not the full historical archive.',
+      ),
     appealsResponsePlans: z
       .array(
         z
@@ -54,7 +56,9 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
           .describe('An appeal or response plan entry.'),
       )
       .optional()
-      .describe('Active humanitarian appeals and response plans for this country.'),
+      .describe(
+        'Currently-active humanitarian appeals and response plans for this country — the present set, not the full historical archive.',
+      ),
     usefulLinks: z
       .array(
         z
@@ -65,7 +69,9 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
           .describe('A useful external link.'),
       )
       .optional()
-      .describe('Useful external links curated by ReliefWeb editors.'),
+      .describe(
+        'Currently-active useful external links curated by ReliefWeb editors — the present set, not the full historical archive.',
+      ),
   }),
   errors: [
     {

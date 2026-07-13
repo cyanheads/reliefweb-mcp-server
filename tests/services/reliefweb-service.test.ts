@@ -161,7 +161,7 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
     vi.unstubAllEnvs();
   });
 
-  it('extracts active links from nested { title, active, archive } profile sub-fields', async () => {
+  it('keeps only the active set from { title, active, archive } profile sub-fields (drops archive)', async () => {
     const apiResponse = {
       count: 1,
       data: [
@@ -188,10 +188,14 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
                 active: [
                   { url: 'https://reliefweb.int/hrp', title: 'HRP 2024', date: '2024-01-01' },
                 ],
+                archive: [
+                  { url: 'https://reliefweb.int/hrp-old', title: 'HRP 2019', date: '2019-01-01' },
+                ],
               },
               useful_links: {
                 title: 'Useful Links',
                 active: [{ url: 'https://ocha.org/syria', title: 'OCHA Syria' }],
+                archive: [{ url: 'https://ocha.org/syria-old', title: 'OCHA Syria (archived)' }],
               },
             },
           },
@@ -211,28 +215,83 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
 
     expect(result).not.toBeNull();
     expect(result?.profileOverview).toBe('Syria crisis overview.');
-    // key_content: active (2) + archive (1) = 3 items
-    expect(result?.keyContent).toHaveLength(3);
-    expect(result?.keyContent?.[0]).toEqual({
-      title: 'Key Update 1',
-      url: 'https://reliefweb.int/key1',
-    });
-    expect(result?.keyContent?.[2]).toEqual({
-      title: 'Archive Item',
-      url: 'https://reliefweb.int/key-archive',
-    });
-    // appeals_response_plans: active only
+    // key_content: active only (2) — archive dropped
+    expect(result?.keyContent).toEqual([
+      { title: 'Key Update 1', url: 'https://reliefweb.int/key1' },
+      { title: 'Key Update 2', url: 'https://reliefweb.int/key2' },
+    ]);
+    expect(JSON.stringify(result?.keyContent)).not.toContain('key-archive');
+    // appeals_response_plans: active only — archive dropped
     expect(result?.appealsResponsePlans).toHaveLength(1);
     expect(result?.appealsResponsePlans?.[0]).toMatchObject({
       title: 'HRP 2024',
       date: '2024-01-01',
     });
-    // useful_links: active only
-    expect(result?.usefulLinks).toHaveLength(1);
-    expect(result?.usefulLinks?.[0]).toEqual({
-      title: 'OCHA Syria',
-      url: 'https://ocha.org/syria',
-    });
+    expect(JSON.stringify(result?.appealsResponsePlans)).not.toContain('HRP 2019');
+    // useful_links: active only — archive dropped
+    expect(result?.usefulLinks).toEqual([{ title: 'OCHA Syria', url: 'https://ocha.org/syria' }]);
+    expect(JSON.stringify(result?.usefulLinks)).not.toContain('archived');
+  });
+
+  it('drops a large archive entirely — active-only keeps the payload bounded (issue #9)', async () => {
+    const bigKeyArchive = Array.from({ length: 500 }, (_, i) => ({
+      url: `https://reliefweb.int/key-archive-${i}`,
+      title: `Archived Key Content ${i}`,
+    }));
+    const bigAppealArchive = Array.from({ length: 120 }, (_, i) => ({
+      url: `https://reliefweb.int/appeal-archive-${i}`,
+      title: `Archived Appeal ${i}`,
+      date: '2015-01-01',
+    }));
+    const apiResponse = {
+      count: 1,
+      data: [
+        {
+          id: 10001,
+          type: 'countries',
+          fields: {
+            id: 10001,
+            name: 'Syrian Arab Republic',
+            iso3: 'SYR',
+            status: 'current',
+            profile: {
+              key_content: {
+                title: 'Key Content',
+                active: [
+                  { url: 'https://reliefweb.int/key1', title: 'Key Update 1' },
+                  { url: 'https://reliefweb.int/key2', title: 'Key Update 2' },
+                  { url: 'https://reliefweb.int/key3', title: 'Key Update 3' },
+                ],
+                archive: bigKeyArchive,
+              },
+              appeals_response_plans: {
+                title: 'Appeals & Response Plans',
+                active: [
+                  { url: 'https://reliefweb.int/hrp', title: 'HRP 2024', date: '2024-01-01' },
+                ],
+                archive: bigAppealArchive,
+              },
+            },
+          },
+        },
+      ],
+      status: 200,
+      time: 0.05,
+      totalCount: 1,
+      self: 'https://api.reliefweb.int/v2/countries',
+    };
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(apiResponse));
+
+    const ctx = createMockContext();
+    const service = makeService();
+    const result = await service.getCountry('SYR', ctx);
+
+    // 3 active survive a 500-entry archive; 1 active appeal survives 120 archived.
+    expect(result?.keyContent).toHaveLength(3);
+    expect(result?.appealsResponsePlans).toHaveLength(1);
+    // Not one archived entry leaks into the normalized output.
+    expect(JSON.stringify(result)).not.toContain('archive-');
   });
 
   it('handles country with no profile data', async () => {
@@ -269,7 +328,7 @@ describe('ReliefWebService.getDisaster — profile sub-field normalization', () 
     vi.unstubAllEnvs();
   });
 
-  it('extracts active links from nested { title, active, archive } profile sub-fields', async () => {
+  it('keeps only the active set from { title, active, archive } profile sub-fields (drops archive)', async () => {
     const apiResponse = {
       count: 1,
       data: [
@@ -285,6 +344,7 @@ describe('ReliefWebService.getDisaster — profile sub-field normalization', () 
               key_content: {
                 title: 'Key Content',
                 active: [{ url: 'https://reliefweb.int/key', title: 'Key Update' }],
+                archive: [{ url: 'https://reliefweb.int/key-old', title: 'Archived Key' }],
               },
               appeals_response_plans: {
                 title: 'Appeals',
@@ -295,10 +355,18 @@ describe('ReliefWebService.getDisaster — profile sub-field normalization', () 
                     date: '2023-02-20',
                   },
                 ],
+                archive: [
+                  {
+                    url: 'https://reliefweb.int/appeal-old',
+                    title: 'Old Appeal 2021',
+                    date: '2021-01-01',
+                  },
+                ],
               },
               useful_links: {
                 title: 'Useful Links',
                 active: [{ url: 'https://unhcr.org/turkey', title: 'UNHCR Response' }],
+                archive: [{ url: 'https://unhcr.org/turkey-old', title: 'UNHCR (archived)' }],
               },
             },
           },
@@ -323,9 +391,12 @@ describe('ReliefWebService.getDisaster — profile sub-field normalization', () 
       title: 'Key Update',
       url: 'https://reliefweb.int/key',
     });
+    expect(JSON.stringify(result?.keyContent)).not.toContain('key-old');
     expect(result?.appealsResponsePlans).toHaveLength(1);
     expect(result?.appealsResponsePlans?.[0]).toMatchObject({ date: '2023-02-20' });
+    expect(JSON.stringify(result?.appealsResponsePlans)).not.toContain('Old Appeal');
     expect(result?.usefulLinks).toHaveLength(1);
+    expect(JSON.stringify(result?.usefulLinks)).not.toContain('archived');
   });
 });
 
@@ -430,12 +501,14 @@ describe('ReliefWebService — search request shape', () => {
   function lastPostedQuery(): {
     filter?: unknown;
     query?: { value?: string; fields?: string[]; operator?: string };
+    sort?: string[];
   } {
     const call = vi.mocked(globalThis.fetch).mock.calls.at(-1);
     const init = call?.[1] as RequestInit | undefined;
     return JSON.parse(String(init?.body)) as {
       filter?: unknown;
       query?: { value?: string; fields?: string[]; operator?: string };
+      sort?: string[];
     };
   }
 
@@ -478,5 +551,39 @@ describe('ReliefWebService — search request shape', () => {
     expect(filter).toMatchObject({ field: 'status', value: ['ongoing'] });
     expect(JSON.stringify(filter)).not.toContain('alert');
     expect(JSON.stringify(filter)).not.toContain('current');
+  });
+
+  // Issue #12: sort is threaded through searchJobs / searchTraining, with training
+  // defaulting to soonest-starting (date.start:asc) and jobs to newest (date.created:desc).
+  it('searchTraining defaults sort to date.start:asc (soonest-starting)', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchTraining({}, createMockContext());
+
+    expect(lastPostedQuery().sort).toEqual(['date.start:asc']);
+  });
+
+  it('searchTraining threads an explicit sort into the query', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchTraining({ sort: 'date.start:desc' }, createMockContext());
+
+    expect(lastPostedQuery().sort).toEqual(['date.start:desc']);
+  });
+
+  it('searchJobs defaults sort to date.created:desc (newest postings)', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchJobs({}, createMockContext());
+
+    expect(lastPostedQuery().sort).toEqual(['date.created:desc']);
+  });
+
+  it('searchJobs threads an explicit sort into the query', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchJobs({ sort: 'date.closing:asc' }, createMockContext());
+
+    expect(lastPostedQuery().sort).toEqual(['date.closing:asc']);
   });
 });

@@ -13,7 +13,8 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
     'Search humanitarian training and learning opportunities on ReliefWeb by country, format, date, source, career category, and language. ' +
     'Covers on-site and online capacity-building events. ' +
     'Training date fields use date.start / date.end — different from report date fields. ' +
-    'Use date_start_from and date_start_to to find upcoming training within a window.',
+    'Use date_start_from and date_start_to to find upcoming training within a window. ' +
+    'Results default to soonest-starting first (date.start:asc).',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
@@ -52,6 +53,12 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       .optional()
       .describe(
         'Training start date upper bound (ISO 8601). Filters on date.start — pair with date_start_from for a window.',
+      ),
+    sort: z
+      .string()
+      .optional()
+      .describe(
+        'Sort order. Use date.start:asc for soonest-starting training first (default), date.start:desc for latest-starting, date.created:desc for most recently posted, or score:desc for relevance.',
       ),
     limit: z
       .number()
@@ -162,7 +169,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ...(input.language?.trim() ? { language: input.language } : {}),
       ...(input.date_start_from?.trim() ? { dateStartFrom: input.date_start_from } : {}),
       ...(input.date_start_to?.trim() ? { dateStartTo: input.date_start_to } : {}),
-      sort: 'date.created:desc',
+      sort: input.sort?.trim() || 'date.start:asc',
       limit: input.limit,
       offset: input.offset,
     };
@@ -178,6 +185,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
           ...(input.language?.trim() ? { language: input.language } : {}),
           ...(input.date_start_from?.trim() ? { dateStartFrom: input.date_start_from } : {}),
           ...(input.date_start_to?.trim() ? { dateStartTo: input.date_start_to } : {}),
+          ...(input.sort?.trim() ? { sort: input.sort } : {}),
           limit: input.limit,
           offset: input.offset,
         },

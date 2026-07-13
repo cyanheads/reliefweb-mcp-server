@@ -99,6 +99,20 @@ describe('reliefwebSearchJobs', () => {
     });
   });
 
+  it('threads an explicit sort into the service call and echoes it in appliedFilters', async () => {
+    mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ sort: 'date.closing:asc' });
+    const result = await reliefwebSearchJobs.handler(input, ctx);
+
+    expect(mockSearchJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'date.closing:asc' }),
+      ctx,
+    );
+    expect(result.appliedFilters.sort).toBe('date.closing:asc');
+  });
+
   it('throws ctx.fail("upstream_error") when the service rejects', async () => {
     mockSearchJobs.mockRejectedValue(
       new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503'),

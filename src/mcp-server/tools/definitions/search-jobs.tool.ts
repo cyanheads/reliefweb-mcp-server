@@ -49,6 +49,12 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .describe(
         'Experience level (e.g., 0-2 years, 3-4 years, 5-9 years). Filters on experience.name.',
       ),
+    sort: z
+      .string()
+      .optional()
+      .describe(
+        'Sort order. Use date.created:desc for newest postings first (default), date.closing:asc to surface roles closing soonest, or score:desc for relevance.',
+      ),
     limit: z
       .number()
       .int()
@@ -148,7 +154,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
       ...(input.theme?.trim() ? { theme: input.theme } : {}),
       ...(input.experience?.trim() ? { experience: input.experience } : {}),
-      sort: 'date.created:desc',
+      sort: input.sort?.trim() || 'date.created:desc',
       limit: input.limit,
       offset: input.offset,
     };
@@ -162,6 +168,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
           ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
           ...(input.theme?.trim() ? { theme: input.theme } : {}),
           ...(input.experience?.trim() ? { experience: input.experience } : {}),
+          ...(input.sort?.trim() ? { sort: input.sort } : {}),
           limit: input.limit,
           offset: input.offset,
         },

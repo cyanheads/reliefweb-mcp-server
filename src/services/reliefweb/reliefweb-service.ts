@@ -407,6 +407,7 @@ export class ReliefWebService {
       careerCategory?: string;
       theme?: string;
       experience?: string;
+      sort?: string;
       limit?: number;
       offset?: number;
     },
@@ -426,7 +427,7 @@ export class ReliefWebService {
     const query: ReliefWebQuery = {
       fields: { include: JOB_LIST_FIELDS },
       ...(filter ? { filter } : {}),
-      sort: ['date.created:desc'],
+      sort: [params.sort ?? 'date.created:desc'],
       preset: 'latest',
       limit: params.limit ?? 10,
       offset: params.offset ?? 0,
@@ -452,6 +453,7 @@ export class ReliefWebService {
       language?: string;
       dateStartFrom?: string;
       dateStartTo?: string;
+      sort?: string;
       limit?: number;
       offset?: number;
     },
@@ -474,7 +476,8 @@ export class ReliefWebService {
     const query: ReliefWebQuery = {
       fields: { include: TRAINING_LIST_FIELDS },
       ...(filter ? { filter } : {}),
-      sort: ['date.created:desc'],
+      // Soonest-starting first — the "upcoming training" purpose the tool documents.
+      sort: [params.sort ?? 'date.start:asc'],
       preset: 'latest',
       limit: params.limit ?? 10,
       offset: params.offset ?? 0,
@@ -600,14 +603,12 @@ function normalizeDisasterDetail(f: RawDisasterFields, id: number): DisasterDeta
   const r: DisasterDetail = { ...normalizeDisasterSummary(f, id) };
   if (f.description) r.description = f.description;
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
-  const kcField = f.profile?.key_content;
-  const kc = normalizeLinks([...(kcField?.active ?? []), ...(kcField?.archive ?? [])]);
+  // Active set only — drop the archive half (see normalizeCountryDetail for the rationale).
+  const kc = normalizeLinks(f.profile?.key_content?.active);
   if (kc) r.keyContent = kc;
-  const apField = f.profile?.appeals_response_plans;
-  const ap = normalizeDatedLinks([...(apField?.active ?? []), ...(apField?.archive ?? [])]);
+  const ap = normalizeDatedLinks(f.profile?.appeals_response_plans?.active);
   if (ap) r.appealsResponsePlans = ap;
-  const ulField = f.profile?.useful_links;
-  const ul = normalizeLinks([...(ulField?.active ?? []), ...(ulField?.archive ?? [])]);
+  const ul = normalizeLinks(f.profile?.useful_links?.active);
   if (ul) r.usefulLinks = ul;
   return r;
 }
@@ -623,14 +624,16 @@ function normalizeCountrySummary(f: RawCountryFields, id: number): CountrySummar
 function normalizeCountryDetail(f: RawCountryFields, id: number): CountryDetail {
   const r: CountryDetail = { ...normalizeCountrySummary(f, id) };
   if (f.profile?.overview) r.profileOverview = f.profile.overview;
-  const kcField = f.profile?.key_content;
-  const kc = normalizeLinks([...(kcField?.active ?? []), ...(kcField?.archive ?? [])]);
+  /**
+   * Active set only — the archive runs to thousands of entries for long-running
+   * crises (e.g. SYR key_content: 3 active vs 2,300+ archived) and blows the client
+   * token budget. keyContent reflects what ReliefWeb currently curates, not its full history.
+   */
+  const kc = normalizeLinks(f.profile?.key_content?.active);
   if (kc) r.keyContent = kc;
-  const apField = f.profile?.appeals_response_plans;
-  const ap = normalizeDatedLinks([...(apField?.active ?? []), ...(apField?.archive ?? [])]);
+  const ap = normalizeDatedLinks(f.profile?.appeals_response_plans?.active);
   if (ap) r.appealsResponsePlans = ap;
-  const ulField = f.profile?.useful_links;
-  const ul = normalizeLinks([...(ulField?.active ?? []), ...(ulField?.archive ?? [])]);
+  const ul = normalizeLinks(f.profile?.useful_links?.active);
   if (ul) r.usefulLinks = ul;
   return r;
 }
