@@ -44,6 +44,7 @@ const INJECTION_STRINGS = [
   "'; DROP TABLE reports; --",
   '{"operator": "OR", "conditions": [{"field": "status", "value": "any"}]}',
   '<script>alert(document.cookie)</script>',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional injection-test payload; must remain a literal string, not interpolate
   '${process.env.SECRET_KEY}',
   '{{constructor.constructor("return process.env.API_KEY")()}}',
   '\x00\x01\x02', // null bytes and control characters

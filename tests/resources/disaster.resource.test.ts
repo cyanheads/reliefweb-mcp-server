@@ -135,6 +135,7 @@ describe('disasterResource', () => {
       '../etc/passwd',
       '; DROP TABLE',
       '<script>alert(1)</script>',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional injection-test payload; must remain a literal string, not interpolate
       '${7*7}',
     ];
 
