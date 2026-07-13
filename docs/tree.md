@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-06-20 18:07:13
+Generated on: 2026-07-13 16:58:58
 
 ```text
 reliefweb-mcp-server/
@@ -11,10 +11,12 @@ reliefweb-mcp-server/
 │   ├── mcp.json
 │   └── plugin.json
 ├── .github/
-│   └── ISSUE_TEMPLATE/
-│       ├── bug_report.yml
-│       ├── config.yml
-│       └── feature_request.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   ├── config.yml
+│   │   └── feature_request.yml
+│   ├── FUNDING.yml
+│   └── SECURITY.md
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
@@ -177,6 +179,7 @@ reliefweb-mcp-server/
 │       └── security.tool.test.ts
 ├── .dockerignore
 ├── .env.example
+├── .gitattributes
 ├── .gitignore
 ├── .mcpbignore
 ├── AGENTS.md

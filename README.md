@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.12-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.13-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -108,7 +108,7 @@ Fetch a country profile from ReliefWeb by ISO3 code.
 
 List all countries and territories tracked by ReliefWeb.
 
-- Optional `crisis_only=true` to limit to active humanitarian situations (status alert or current)
+- Optional `crisis_only=true` to limit to active humanitarian situations (status ongoing)
 - Returns ISO3 codes, status, and canonical URLs — use ISO3 with `reliefweb_get_country`
 - Pagination up to 1,000 entries per call
 
@@ -129,7 +129,7 @@ Search humanitarian job listings on ReliefWeb.
 
 Search humanitarian training and learning opportunities.
 
-- Covers workshops, e-learning, conferences, seminars, and other capacity-building events
+- Covers on-site and online capacity-building events
 - Filtering by country, source, format, career category, and language
 - Date range filtering on training start date (`date_start_from` / `date_start_to`)
 - Distinct from report date fields — uses `date.start` / `date.end`
@@ -140,7 +140,7 @@ Search humanitarian training and learning opportunities.
 
 Browse organizations that contribute content to ReliefWeb.
 
-- Optional filtering by name text or organization type (Government, International Organization, NGO, Academia)
+- Optional filtering by name text or organization type (Government, International Organization, Non-governmental Organization, Academic and Research Institution, Media, Red Cross/Red Crescent Movement, Other)
 - Returns short names, types, organization URLs, and homepage URLs
 - Use `shortname` with the `source` filter in `reliefweb_search_reports`, `reliefweb_search_jobs`, and `reliefweb_search_training`
 

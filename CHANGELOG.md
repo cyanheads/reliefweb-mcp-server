@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.13](changelog/0.1.x/0.1.13.md) — 2026-07-13
+
+Corrects filter behavior across the search tools — country filters match all tagged countries, list_sources text search covers organization short names, and documented type/format/status values match the ReliefWeb taxonomy; adopts mcp-ts-core ^0.10.14 and clears a transitive js-yaml advisory.
+
 ## [0.1.12](changelog/0.1.x/0.1.12.md) — 2026-06-20
 
 mcp-ts-core ^0.10.9 maintenance: dependency-specifier + plugin-manifest devcheck guards, fresh-scaffold devcheck fixes, vendored framework skill sync
