@@ -246,3 +246,46 @@ describe('reliefwebSearchJobs — offset past the end of the result set', () => 
     expect(getEnrichment(ctx).notice).toContain('No jobs matched');
   });
 });
+
+// ─── Issue #18: include_archived reaches the expired-postings archive ─────────
+
+describe('reliefwebSearchJobs — include_archived', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('sends preset=analysis to the service and echoes it on both surfaces', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ country: 'KEN', include_archived: true });
+    const result = await reliefwebSearchJobs.handler(input, ctx);
+
+    expect(mockSearchJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ includeArchived: true }),
+      ctx,
+    );
+    expect(result.appliedFilters.preset).toBe('analysis');
+    const text = (reliefwebSearchJobs.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('preset=analysis');
+  });
+
+  it('defaults to the open-postings preset when the flag is absent', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ country: 'KEN' });
+    const result = await reliefwebSearchJobs.handler(input, ctx);
+
+    const params = mockSearchJobs.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('includeArchived');
+    expect(result.appliedFilters.preset).toBe('latest');
+    const text = (reliefwebSearchJobs.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('preset=latest');
+  });
+
+  it('offers the archive in the empty-result notice', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ country: 'KEN' });
+    await reliefwebSearchJobs.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toContain('include_archived=true');
+  });
+});

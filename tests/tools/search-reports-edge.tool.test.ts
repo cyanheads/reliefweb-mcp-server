@@ -70,17 +70,15 @@ describe('reliefwebSearchReports — edge cases', () => {
     );
   });
 
-  it('forwards include_archived flag', async () => {
+  it('leaves include_archived out of the service call — reports have no archive', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
     const input = reliefwebSearchReports.input.parse({ include_archived: true });
     await reliefwebSearchReports.handler(input, ctx);
 
-    expect(mockSearchReports).toHaveBeenCalledWith(
-      expect.objectContaining({ includeArchived: true }),
-      ctx,
-    );
+    const params = mockSearchReports.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('includeArchived');
   });
 
   it('forwards raw filter object when provided', async () => {

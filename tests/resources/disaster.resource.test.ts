@@ -85,14 +85,38 @@ describe('disasterResource', () => {
   it('throws ValidationError for float ID string', async () => {
     const ctx = createMockContext({ uri: new URL('reliefweb://disasters/1.5') });
 
-    // parseInt('1.5') = 1 which is valid, but NaN check handles "abc" — this one
-    // resolves to 1 and proceeds; let the upstream handle it. Verify it does NOT error on parse.
-    mockGetDisaster.mockResolvedValue(null);
-
-    // parseInt('1.5', 10) = 1 — the handler will call the service with 1
     await expect(disasterResource.handler({ id: '1.5' }, ctx)).rejects.toMatchObject({
-      code: JsonRpcErrorCode.NotFound,
+      code: VALIDATION_CODE,
     });
+    expect(mockGetDisaster).not.toHaveBeenCalled();
+  });
+
+  it('rejects an ID with trailing junk instead of serving the numeric prefix', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://disasters/51470junk') });
+
+    await expect(disasterResource.handler({ id: '51470junk' }, ctx)).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+    });
+    expect(mockGetDisaster).not.toHaveBeenCalled();
+  });
+
+  it('rejects scientific notation rather than reading its leading digit', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://disasters/1e3') });
+
+    await expect(disasterResource.handler({ id: '1e3' }, ctx)).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+    });
+    expect(mockGetDisaster).not.toHaveBeenCalled();
+  });
+
+  it('rejects whitespace padding and a signed ID', async () => {
+    for (const id of [' 51470', '51470 ', '+51470']) {
+      const ctx = createMockContext({ uri: new URL('reliefweb://disasters/x') });
+      await expect(disasterResource.handler({ id }, ctx)).rejects.toMatchObject({
+        code: VALIDATION_CODE,
+      });
+    }
+    expect(mockGetDisaster).not.toHaveBeenCalled();
   });
 
   it('throws NotFound when disaster does not exist', async () => {

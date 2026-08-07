@@ -100,11 +100,13 @@ Scope: read-only. No publishing API — the Publishing API requires an org-level
 
 ### Report Format Values
 
-The `format` filter for reports uses these names: `Situation Report`, `Assessment`, `Analysis`, `Map`, `Infographic`, `Manual and Guideline`, `News and Press Release`, `Policy Document`, `Appeal`, `Financial Report`, `Evaluation and Lessons Learned`, `Other`.
+The complete `format.name` vocabulary, ordered by corpus size: `News and Press Release`, `Situation Report`, `Map`, `Infographic`, `Analysis`, `Other`, `Assessment`, `Manual and Guideline`, `Appeal`, `UN Document`, `Evaluation and Lessons Learned`. Closed set — the facet's per-value counts sum to the unfiltered `totalCount` under every preset. `Policy Document` and `Financial Report` are not ReliefWeb values and match nothing.
 
 ### Disaster Status Values
 
-`alert` — just declared; `current` — ongoing; `past` — resolved; `alert-archive` — alert archived; `archive` — fully archived. The `minimal` and `latest` presets filter to `alert | current | past`. The `analysis` preset includes `alert-archive` and `archive` for historical research. When passing a `status` filter directly, use these exact string values.
+`alert` — just declared; `ongoing` — in progress; `past` — resolved; `alert-archive` — an alert that was archived. Closed set, confirmed the same way. The `minimal` and `latest` presets filter to `alert | ongoing | past`; `analysis` adds `alert-archive`, so asking for that status without `include_archived: true` legitimately returns nothing. `current` and `archive` are not values the API returns.
+
+Both are matched case-insensitively upstream, and `format.name` is analyzed rather than exact, so `"news and press release"`, `"News & Press Release"`, and `"news-and-press-release"` are working filter values, not typos. Disaster `status` is a keyword field: `alert archive` matches nothing upstream, so the canonicalizer resolves it to `alert-archive` before the query goes out.
 
 ### Key Filterable Fields
 
@@ -117,7 +119,7 @@ The `format` filter for reports uses these names: `Situation Report`, `Assessmen
 | `disaster.id` | reports | Link reports to a disaster (integer ID) |
 | `glide` | disasters | GLIDE number (global disaster ID) |
 | `type.name` | disasters, jobs, sources | Disaster type (`type.name`), job type (`type.name`), org type (`type.name`); for disasters also `primary_type.name` for primary disaster type |
-| `status` (disasters) | disasters | `alert`, `current`, `past`, `alert-archive`, `archive`. Filter directly: `{"field": "status", "value": ["alert", "current"]}`. Presets already set defaults — use explicit filter only when overriding. |
+| `status` (disasters) | disasters | `alert`, `ongoing`, `past`, `alert-archive`. Filter directly: `{"field": "status", "value": ["alert", "ongoing"]}`. Presets already set defaults — use explicit filter only when overriding. |
 | `status` (countries) | countries | `ongoing` (active crisis) or `normal` (non-crisis). `crisis_only=true` filters to `ongoing`. |
 | `status` (sources) | sources | `active` or `inactive`. |
 | `date.original` | reports | Source publication date |
@@ -168,27 +170,29 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | all search tools | `country` | ISO 3166-1 alpha-3 country code (e.g., `SYR`, `AFG`, `UKR`). Filters to content tagged with this country. |
 | all search tools | `limit` | Number of results to return (1–1000, default 10). Use a smaller value for targeted lookups; larger for bulk research. Note: each call counts against the 1,000-calls/day quota. |
 | all search tools | `offset` | Zero-based offset for pagination. Use with `limit` and `totalCount` from the response to page through large result sets. |
-| `reliefweb_search_reports` | `format` | Content format filter. Valid values: `Situation Report`, `Assessment`, `Analysis`, `Map`, `Infographic`, `Manual and Guideline`, `News and Press Release`, `Policy Document`, `Appeal`, `Financial Report`, `Evaluation and Lessons Learned`, `Other`. |
-| `reliefweb_search_reports` | `theme` | Sector or cross-cutting theme (e.g., `Health`, `Food and Nutrition`, `Shelter and NFI`, `Protection`). Matches `theme.name`. |
+| `reliefweb_search_reports` | `format` | Content format filter. One of: `News and Press Release`, `Situation Report`, `Map`, `Infographic`, `Analysis`, `Other`, `Assessment`, `Manual and Guideline`, `Appeal`, `UN Document`, `Evaluation and Lessons Learned`. Case, spacing, and punctuation ignored; any other value rejected with the valid list. |
+| `reliefweb_search_reports` | `theme` | Sector or cross-cutting theme (e.g., `Health`, `Food and Nutrition`, `Shelter and Non-Food Items`, `Protection`). Open-ended — matches `theme.name` exactly as ReliefWeb spells it. |
 | `reliefweb_search_reports` | `date_from` | Earliest publication date. Filters on `date.original` (source publication date). Accepts a bare calendar date (`2024-01-15`, resolved to start of day UTC) or a full ISO 8601 datetime in any offset, resolved to UTC. |
 | `reliefweb_search_reports` | `date_to` | Latest publication date. Pair with `date_from` for a date range. A bare calendar date resolves to end of day UTC, so the range covers it in full. |
 | `reliefweb_search_reports` | `disaster_id` | ReliefWeb numeric disaster ID. Filters to reports linked to a specific disaster. Get the ID from `reliefweb_search_disasters`. |
 | `reliefweb_search_reports` | `language` | ISO 639-1 language code (e.g., `en`, `fr`, `es`, `ar`). Filters on `language.code`. |
 | `reliefweb_search_reports` | `source` | Organization short name (e.g., `UNHCR`, `OCHA`, `WFP`). Filters on `source.shortname`. |
 | `reliefweb_search_reports` | `sort` | Sort order. Use `date.original:desc` for newest first (default), `date.original:asc` for oldest first, `score:desc` for relevance. |
-| `reliefweb_search_reports` | `include_archived` | Include archived/to-review content in addition to published. Uses `preset=analysis`. Off by default. |
+| `reliefweb_search_reports` | `include_archived` | No effect. Reports have no archived class, so every report is in scope whatever this is set to. Kept so existing calls keep working. |
 | `reliefweb_search_reports` | `filter` | Raw ReliefWeb filter object for compound conditions not covered by named params. See API docs for syntax. Example: `{"operator": "AND", "conditions": [{"field": "format.name", "value": "Map"}, {"field": "language.code", "value": "fr"}]}`. |
 | `reliefweb_search_disasters` | `disaster_type` | Disaster type name (e.g., `Earthquake`, `Flood`, `Drought`, `Cyclone`). Filters on `type.name`. |
-| `reliefweb_search_disasters` | `status` | Disaster status filter. Values: `alert` (newly declared), `current` (ongoing), `past` (resolved), `alert-archive`, `archive`. Default preset includes `alert`, `current`, `past`. Pass `include_archived: true` for full historical set. |
+| `reliefweb_search_disasters` | `status` | Disaster status filter. One of: `alert` (newly declared), `ongoing`, `past` (resolved), `alert-archive`. Comma-separate for multiple; case, spacing, and punctuation ignored; any other value rejected with the valid list. Default preset covers `alert`, `ongoing`, `past` — `alert-archive` additionally needs `include_archived: true`. |
 | `reliefweb_search_disasters` | `glide` | GLIDE number (global disaster identifier, e.g., `EQ-2023-000053-TUR`). Use for cross-system disaster correlation. |
 | `reliefweb_get_country` | `iso3` | ISO 3166-1 alpha-3 country code (e.g., `SYR`, `AFG`, `UKR`). Used to look up the country's ReliefWeb profile. |
 | `reliefweb_list_countries` | `crisis_only` | When true, filters to countries with an active humanitarian situation (status `ongoing`). |
 | `reliefweb_search_jobs` | `career_category` | Humanitarian career track (e.g., `Programme and Project Management`, `Information and Communications Technology`, `Logistics and Telecommunications`). Filters on `career_categories.name`. |
 | `reliefweb_search_jobs` | `experience` | Experience level (e.g., `0-2 years`, `3-4 years`, `5-9 years`). Filters on `experience.name`. |
 | `reliefweb_search_jobs` | `sort` | Sort order. `date.created:desc` for newest postings first (default), `date.closing:asc` to surface roles closing soonest, `score:desc` for relevance. |
+| `reliefweb_search_jobs` | `include_archived` | Search expired postings alongside the open ones. Uses `preset=analysis`. Off by default — the open set is a small fraction of the archive. |
 | `reliefweb_search_training` | `date_start_from` | Training start date lower bound. Filters on `date.start` — use to find training starting after a given date. Accepts a bare calendar date or a full ISO 8601 datetime. Omitting both start-date bounds defaults the lower bound to the current timestamp. |
 | `reliefweb_search_training` | `date_start_to` | Training start date upper bound. Filters on `date.start` — pair with `date_start_from` for a window. A bare calendar date resolves to end of day UTC. Supplying it alone leaves the lower bound open. |
 | `reliefweb_search_training` | `sort` | Sort order. `date.start:asc` for soonest-starting first (default), `date.start:desc` for latest-starting, `date.created:desc` for most recently posted, `score:desc` for relevance. |
+| `reliefweb_search_training` | `include_archived` | Search concluded listings alongside the current ones. Uses `preset=analysis`. Also drops the start-from-now default bound, so an otherwise unbounded search reaches the whole record. Off by default. |
 | `reliefweb_list_sources` | `type` | Organization type. One of: `Non-governmental Organization`, `International Organization`, `Academic and Research Institution`, `Other`, `Government`, `Media`, `Red Cross/Red Crescent Movement`. Filters on `type.name`. |
 
 ---
@@ -221,7 +225,7 @@ The API's `facets` parameter supports powerful aggregate analysis (e.g., "top co
 
 ### 7. `analysis` preset for historical research
 
-The `preset=analysis` flag includes archived disasters and expired jobs that `minimal`/`latest` hide. Exposed as a `include_archived` boolean on relevant tools rather than surfacing the preset concept directly.
+The `preset=analysis` flag reaches archived disasters, expired job postings, and concluded training that `minimal`/`latest` hide. Exposed as an `include_archived` boolean on the three tools where it changes the result set — disasters, jobs, training — rather than surfacing the preset concept directly. Reports are the exception: their corpus carries no archived class, every preset returns the same records, and the parameter is inert there.
 
 ### 8. `reliefweb_crisis_briefing` prompt over an instruction tool
 
@@ -314,9 +318,11 @@ Pass as `?profile=full` in GET requests or as `"profile": "full"` in POST body. 
 
 ### Presets
 
-- `minimal` — sensible status filters (published/current only)
-- `latest` — status filters + sort by date desc
-- `analysis` — includes archived/expired content for historical analysis
+- `minimal` — status filters only
+- `latest` — the same status filters plus sort by date desc
+- `analysis` — no status filters; reaches archived and expired content
+
+What the status filters exclude is per content type. Reports are unaffected — every preset returns the same records, since their `status` facet holds only `published` and `to-review` and no preset drops either. Disasters, jobs, and training each narrow under `minimal`/`latest` and open up under `analysis`; the counts are in Design Decision #7.
 
 ### Date Formats
 
@@ -347,4 +353,8 @@ GET https://api.reliefweb.int/v2/{content_type}/{id}?appname={name}&profile=full
 | 2026-08-06 | Upstream failures split into `invalid_query` and `upstream_error`, and ReliefWeb's message is folded into the thrown message | The error text path renders only `message` plus `data.recovery.hint`, so an explanation left in `data.body` never reaches `content[]`. Classification is by error code (`InvalidParams` / `InvalidRequest` / `ValidationError`), not by 4xx-vs-5xx: 401/403/429 are 4xx the caller cannot fix by editing the query, so they keep the retry-flavored contract — but they quote the upstream text too, since a 403 naming an unapproved appname is useless if the operator only ever sees "wait and retry". |
 | 2026-08-06 | Date bounds normalized in the tool handler, not in `makeDateFilter` or a Zod `.transform()` | `z.transform()` is barred from tool schemas (not JSON-Schema-serializable), and normalizing inside the shared service helper would leave `appliedFilters` echoing the unresolved raw value. Resolving once per field at the handler feeds both the service call and the echo, so `structuredContent` and `content[]` report the query that ran. Upper bounds resolve to end-of-day so an inclusive bare-date range covers its last day. ReliefWeb accepts exactly one datetime spelling on a range bound — `YYYY-MM-DDTHH:MM:SS` with a zero offset written `+00:00` or `+0000` — and answers `Z`, fractional seconds, a missing seconds component, and every non-zero offset with the same `It must be an ISO 8601 date.` 400, so the resolver converts the wider ISO 8601 surface to UTC rather than advertising forms that fail upstream. |
 | 2026-08-06 | `search_training` injects a current-timestamp lower bound only when both start-date bounds are absent | `date.start:asc` over the whole corpus opens on listings that already started, so the default call answered the wrong question. Injecting whenever either bound was supplied would silently break historical research, so an explicit range is left exactly as given. The bound is built directly as a full ISO datetime rather than pushed back through the input schema, since it is applied after validation. |
+| 2026-08-06 | Closed vocabularies (`search_reports.format`, `search_disasters.status`) are canonicalized in the handler, not constrained by `z.enum` | ReliefWeb matches both fields case-insensitively, and `format.name` is analyzed rather than exact — `"news and press release"`, `"News & Press Release"`, `"News  and  Press  Release"`, and `"news-and-press-release"` all return the same 644k reports today; `status` also takes comma-separated multi-value, which the service splits into an array before sending. A schema-level `z.enum` does exact single-literal matching and would reject all of those at the boundary — a regression on working calls. The fields stay `z.string()` and the handler matches on a normalized key (lower-cased, `&` read as `and`, other punctuation and spacing dropped) against the verified vocabulary, then substitutes the canonical spelling (per comma-separated token for `status`), which is what reaches the service and what `appliedFilters` echoes on both response paths. Normalizing punctuation also makes the hyphen in `alert-archive` optional, where upstream matches `status` as an exact keyword. A token that matches nothing fails through the tool's typed error contract with a message naming every valid value, so a typo produces an actionable error instead of an empty page advising the caller to broaden filters that were never the problem. `z.transform()` is barred from tool schemas, so the handler is the only place this can live. |
+| 2026-08-06 | `include_archived` kept on `search_reports` as a documented no-op; the echoed preset stops flipping | Reports carry no archived class — `latest`, `minimal`, and `analysis` all return the same 1.14M records — so the parameter never changed a result set. Removing it would break an existing tool's input contract, so it stays, described plainly as having no effect, and the query and the echoed `appliedFilters.preset` are both pinned to `latest`. Echoing `analysis` while nothing changed was the misleading half: it implied a coverage difference that does not exist. |
+| 2026-08-06 | `include_archived` on `search_training` also drops the start-from-now lower bound | The bound exists so an unbounded default answers "what is coming up". A caller who turns on the archive is asking for the historical record, and keeping a now-bound would hide exactly the concluded listings the flag exists to reach — leaving the parameter as inert on training as it was on reports. An explicit `date_start_from` still wins. |
+| 2026-08-06 | Resource URI IDs must be a positive integer end to end | `parseInt` stops at the first character it cannot read, so `reliefweb://reports/4221539junk` served report 4221539 and `1.5` served record 1 — a malformed URI silently returned a record the caller never asked for, with nothing in the response to say so. The whole segment is now matched against `^[1-9]\d*$` and range-checked with `Number.isSafeInteger` before any upstream call. The tools were never affected: their ID inputs are already `z.number().int().positive()`. |
 | 2026-08-06 | Empty page with `totalCount > 0` gets its own notice naming the last reachable offset | Keying the notice on `items.length === 0` alone described a correct 1,775-match query as matching nothing and advised dropping the filters. The last-page offset is page-aligned (`floor((totalCount - 1) / limit) * limit`) so the returned value is one an unchanged `limit` can actually page to. `list_countries` carried the same defect behind a static string that mentioned offsets as boilerplate without ever comparing `totalCount` to `offset`, so it takes the same branch. |

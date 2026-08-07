@@ -69,18 +69,16 @@ describe('reliefwebSearchReports', () => {
     });
   });
 
-  it('appliedFilters reflects include_archived=true as analysis preset and rawFilter flag', async () => {
+  it('appliedFilters echoes the resolved sort and rawFilter flag', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
     const input = reliefwebSearchReports.input.parse({
-      include_archived: true,
       sort: 'score:desc',
       filter: { field: 'language.code', value: 'fr' },
     });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
-    expect(result.appliedFilters.preset).toBe('analysis');
     expect(result.appliedFilters.sort).toBe('score:desc');
     expect(result.appliedFilters.rawFilter).toBe(true);
   });
@@ -201,5 +199,139 @@ describe('reliefwebSearchReports', () => {
     expect(text).toContain('country=SYR');
     expect(text).toContain('preset=latest');
     expect(text).toContain('limit=10');
+  });
+});
+
+// ─── Issue #19: format is a closed vocabulary, matched the way ReliefWeb matches it ───
+
+describe('reliefwebSearchReports — format vocabulary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('sends the canonical spelling upstream when the caller lower-cases the value', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ format: 'news and press release' });
+    const result = await reliefwebSearchReports.handler(input, ctx);
+
+    expect(mockSearchReports).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'News and Press Release' }),
+      ctx,
+    );
+    expect(result.appliedFilters.format).toBe('News and Press Release');
+    const text = (reliefwebSearchReports.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('format="News and Press Release"');
+  });
+
+  it('accepts an upper-cased value', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ format: 'NEWS AND PRESS RELEASE' });
+    const result = await reliefwebSearchReports.handler(input, ctx);
+
+    expect(result.appliedFilters.format).toBe('News and Press Release');
+  });
+
+  it('accepts a value carrying surrounding whitespace', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ format: '  Situation Report  ' });
+    const result = await reliefwebSearchReports.handler(input, ctx);
+
+    expect(mockSearchReports).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'Situation Report' }),
+      ctx,
+    );
+    expect(result.appliedFilters.format).toBe('Situation Report');
+  });
+
+  it('accepts the ampersand spelling, which upstream resolves to the same reports', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ format: 'News & Press Release' });
+    const result = await reliefwebSearchReports.handler(input, ctx);
+
+    expect(mockSearchReports).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'News and Press Release' }),
+      ctx,
+    );
+    expect(result.appliedFilters.format).toBe('News and Press Release');
+  });
+
+  it('accepts UN Document, which the previous value list omitted', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ format: 'UN Document' });
+    const result = await reliefwebSearchReports.handler(input, ctx);
+
+    expect(result.appliedFilters.format).toBe('UN Document');
+  });
+
+  it('rejects a retired value by name, listing the real ones, without calling ReliefWeb', async () => {
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
+    const input = reliefwebSearchReports.input.parse({ format: 'Policy Document' });
+
+    const err = (await reliefwebSearchReports
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err).toBeInstanceOf(McpError);
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'unknown_format' });
+    expect(err.message).toContain('"Policy Document"');
+    expect(err.message).toContain('Situation Report');
+    expect(err.message).toContain('UN Document');
+    expect(mockSearchReports).not.toHaveBeenCalled();
+  });
+
+  it('treats a blank format as omitted rather than unknown', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ format: '   ' });
+    const result = await reliefwebSearchReports.handler(input, ctx);
+
+    expect(result.appliedFilters.format).toBeUndefined();
+    expect(mockSearchReports).toHaveBeenCalledWith(
+      expect.not.objectContaining({ format: expect.anything() }),
+      ctx,
+    );
+  });
+});
+
+// ─── Issue #18: include_archived is inert on reports ─────────────────────────
+
+describe('reliefwebSearchReports — include_archived has no effect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('keeps accepting the parameter, so existing calls still run', () => {
+    expect(() => reliefwebSearchReports.input.parse({ include_archived: true })).not.toThrow();
+  });
+
+  it('does not forward it to the service — every preset returns the same reports', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({ include_archived: true });
+    await reliefwebSearchReports.handler(input, ctx);
+
+    expect(mockSearchReports).toHaveBeenCalledWith(
+      expect.not.objectContaining({ includeArchived: expect.anything() }),
+      ctx,
+    );
+  });
+
+  it('echoes preset=latest either way, on both response surfaces', async () => {
+    const ctx = createMockContext();
+    const archived = await reliefwebSearchReports.handler(
+      reliefwebSearchReports.input.parse({ include_archived: true }),
+      ctx,
+    );
+    const plain = await reliefwebSearchReports.handler(
+      reliefwebSearchReports.input.parse({ include_archived: false }),
+      ctx,
+    );
+
+    expect(archived.appliedFilters.preset).toBe('latest');
+    expect(plain.appliedFilters.preset).toBe('latest');
+    const text = (reliefwebSearchReports.format!(archived)[0] as { text: string }).text;
+    expect(text).toContain('preset=latest');
+    expect(text).not.toContain('preset=analysis');
   });
 });

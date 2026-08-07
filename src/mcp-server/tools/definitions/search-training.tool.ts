@@ -28,7 +28,8 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
     'Use date_start_from and date_start_to to find upcoming training within a window. ' +
     'Results default to soonest-starting first (date.start:asc). ' +
     'With neither date bound supplied the search is scoped to training starting from now, so the first page is upcoming opportunities; ' +
-    'supply either bound to search an explicit range, including a historical one.',
+    'supply either bound to search an explicit range, including a historical one. ' +
+    'Use include_archived=true to search concluded listings as well, which are far more numerous than the current ones.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
@@ -68,7 +69,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ])
       .optional()
       .describe(
-        'Training start date lower bound. Filters on date.start — use to find training starting after a given date. A bare calendar date resolves to start of that day in UTC, and a datetime carrying any offset is resolved to UTC. Omit this and date_start_to together to default the search to training starting from now.',
+        'Training start date lower bound. Filters on date.start — use to find training starting after a given date. A bare calendar date resolves to start of that day in UTC, and a datetime carrying any offset is resolved to UTC. Omit this and date_start_to together to default the search to training starting from now, unless include_archived is set, which leaves the range open.',
       ),
     date_start_to: z
       .union([
@@ -89,6 +90,12 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       .optional()
       .describe(
         'Sort order. Use date.start:asc for soonest-starting training first (default), date.start:desc for latest-starting, date.created:desc for most recently posted, or score:desc for relevance.',
+      ),
+    include_archived: z
+      .boolean()
+      .optional()
+      .describe(
+        'Search concluded listings alongside the current ones. Uses preset=analysis. Off by default. Setting this also drops the start-from-now default bound, so an otherwise unbounded search reaches back through the whole record; pair it with date_start_from and date_start_to to study a specific period.',
       ),
     limit: z
       .number()
@@ -153,10 +160,15 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
           .string()
           .optional()
           .describe(
-            'Training start date lower bound applied — the caller-supplied value, or the current timestamp when neither date bound was given.',
+            'Training start date lower bound applied — the caller-supplied value, or the current timestamp when neither date bound was given and include_archived was off.',
           ),
         dateStartTo: z.string().optional().describe('Training start date upper bound applied.'),
         sort: z.string().describe('Sort order the query used (resolved, including the default).'),
+        preset: z
+          .string()
+          .describe(
+            'ReliefWeb preset the query used: latest (current listings only, default) or analysis when include_archived.',
+          ),
         limit: z.number().describe('Result limit the query used.'),
         offset: z.number().describe('Pagination offset the query used.'),
       })
@@ -206,11 +218,13 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
      * An unbounded search is asking what is coming up, but date.start:asc opens on the
      * oldest listing in the corpus — every training that already started sorts ahead of
      * the next one. Scope it to now. A caller who supplied either bound is doing explicit
-     * (possibly historical) research, so their range is left exactly as given.
+     * (possibly historical) research, so their range is left exactly as given — and so is a
+     * caller who asked for the archive, since a start-from-now bound would hide the very
+     * listings include_archived exists to reach.
      */
     const dateStartFrom =
       resolveDateBound(input.date_start_from, 'from') ??
-      (dateStartTo === undefined ? currentDateBound() : undefined);
+      (dateStartTo === undefined && !input.include_archived ? currentDateBound() : undefined);
 
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
@@ -222,6 +236,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ...(dateStartFrom ? { dateStartFrom } : {}),
       ...(dateStartTo ? { dateStartTo } : {}),
       sort: input.sort?.trim() || 'date.start:asc',
+      preset: input.include_archived ? 'analysis' : 'latest',
       limit: input.limit,
       offset: input.offset,
     };
@@ -238,6 +253,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
           ...(dateStartFrom ? { dateStartFrom } : {}),
           ...(dateStartTo ? { dateStartTo } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
+          ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
           limit: input.limit,
           offset: input.offset,
         },
@@ -283,7 +299,8 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       if (dateStartTo) filters.push(`start_to=${dateStartTo}`);
       ctx.enrich.notice(
         `No training matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Try broader keywords, widen or remove the date range, or check the format spelling.',
+          'Try broader keywords, widen or remove the date range, check the format spelling, ' +
+          'or set include_archived=true to search concluded listings as well.',
       );
     }
 
@@ -326,6 +343,7 @@ function renderAppliedFilters(f: {
   dateStartFrom?: string | undefined;
   dateStartTo?: string | undefined;
   sort: string;
+  preset: string;
   limit: number;
   offset: number;
 }): string {
@@ -338,6 +356,6 @@ function renderAppliedFilters(f: {
   if (f.language != null) parts.push(`language=${f.language}`);
   if (f.dateStartFrom != null) parts.push(`dateStartFrom=${f.dateStartFrom}`);
   if (f.dateStartTo != null) parts.push(`dateStartTo=${f.dateStartTo}`);
-  parts.push(`sort=${f.sort}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  parts.push(`sort=${f.sort}`, `preset=${f.preset}`, `limit=${f.limit}`, `offset=${f.offset}`);
   return `**Applied filters:** ${parts.join(', ')}`;
 }

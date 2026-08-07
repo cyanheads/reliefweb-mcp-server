@@ -364,3 +364,65 @@ describe('reliefwebSearchTraining — offset past the end of the result set', ()
     expect(getEnrichment(ctx).notice).toContain('No training matched');
   });
 });
+
+// ─── Issue #18: include_archived reaches the concluded-listings archive ───────
+
+describe('reliefwebSearchTraining — include_archived', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('sends preset=analysis to the service and echoes it on both surfaces', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ country: 'KEN', include_archived: true });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(mockSearchTraining).toHaveBeenCalledWith(
+      expect.objectContaining({ includeArchived: true }),
+      ctx,
+    );
+    expect(result.appliedFilters.preset).toBe('analysis');
+    const text = (reliefwebSearchTraining.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('preset=analysis');
+  });
+
+  it('defaults to the current-listings preset when the flag is absent', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ country: 'KEN' });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    const params = mockSearchTraining.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('includeArchived');
+    expect(result.appliedFilters.preset).toBe('latest');
+  });
+
+  it('drops the start-from-now bound, which would hide the archive it just unlocked', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ include_archived: true });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    const params = mockSearchTraining.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('dateStartFrom');
+    expect(result.appliedFilters.dateStartFrom).toBeUndefined();
+  });
+
+  it('honors an explicit lower bound even with the archive on', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({
+      include_archived: true,
+      date_start_from: '2015-01-01',
+    });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(result.appliedFilters.dateStartFrom).toBe('2015-01-01T00:00:00+00:00');
+  });
+
+  it('offers the archive in the empty-result notice', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ country: 'KEN' });
+    await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toContain('include_archived=true');
+  });
+});

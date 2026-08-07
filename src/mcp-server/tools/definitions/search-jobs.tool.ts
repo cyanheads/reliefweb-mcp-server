@@ -17,7 +17,8 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
   title: 'Search ReliefWeb Jobs',
   description:
     'Search humanitarian job listings on ReliefWeb by country, organization, career category, theme, and experience level. ' +
-    'Returns current open positions — archived or expired jobs are excluded by default. ' +
+    'Returns current open positions — expired postings are excluded by default. ' +
+    'Use include_archived=true to search the full history of postings, which is far larger than the open set. ' +
     'Use text search for role titles and job descriptions.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
@@ -60,6 +61,12 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .optional()
       .describe(
         'Sort order. Use date.created:desc for newest postings first (default), date.closing:asc to surface roles closing soonest, or score:desc for relevance.',
+      ),
+    include_archived: z
+      .boolean()
+      .optional()
+      .describe(
+        'Search expired postings alongside the open ones. Uses preset=analysis. Off by default — the open set is a small fraction of the archive, so turn this on for labour-market history rather than for a hiring snapshot.',
       ),
     limit: z
       .number()
@@ -117,6 +124,11 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
         theme: z.string().optional().describe('Theme name filter applied.'),
         experience: z.string().optional().describe('Experience level filter applied.'),
         sort: z.string().describe('Sort order the query used (resolved, including the default).'),
+        preset: z
+          .string()
+          .describe(
+            'ReliefWeb preset the query used: latest (open postings only, default) or analysis when include_archived.',
+          ),
         limit: z.number().describe('Result limit the query used.'),
         offset: z.number().describe('Pagination offset the query used.'),
       })
@@ -168,6 +180,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       ...(input.theme?.trim() ? { theme: input.theme } : {}),
       ...(input.experience?.trim() ? { experience: input.experience } : {}),
       sort: input.sort?.trim() || 'date.created:desc',
+      preset: input.include_archived ? 'analysis' : 'latest',
       limit: input.limit,
       offset: input.offset,
     };
@@ -182,6 +195,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
           ...(input.theme?.trim() ? { theme: input.theme } : {}),
           ...(input.experience?.trim() ? { experience: input.experience } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
+          ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
           limit: input.limit,
           offset: input.offset,
         },
@@ -225,7 +239,8 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       if (input.experience) filters.push(`experience="${input.experience}"`);
       ctx.enrich.notice(
         `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Try broader keywords, remove the country filter, or check the career category spelling.',
+          'Try broader keywords, remove the country filter, check the career category spelling, ' +
+          'or set include_archived=true to search expired postings as well.',
       );
     }
 
@@ -266,6 +281,7 @@ function renderAppliedFilters(f: {
   theme?: string | undefined;
   experience?: string | undefined;
   sort: string;
+  preset: string;
   limit: number;
   offset: number;
 }): string {
@@ -276,6 +292,6 @@ function renderAppliedFilters(f: {
   if (f.careerCategory != null) parts.push(`careerCategory="${f.careerCategory}"`);
   if (f.theme != null) parts.push(`theme="${f.theme}"`);
   if (f.experience != null) parts.push(`experience="${f.experience}"`);
-  parts.push(`sort=${f.sort}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  parts.push(`sort=${f.sort}`, `preset=${f.preset}`, `limit=${f.limit}`, `offset=${f.offset}`);
   return `**Applied filters:** ${parts.join(', ')}`;
 }

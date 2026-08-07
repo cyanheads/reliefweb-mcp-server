@@ -236,6 +236,97 @@ describe('reliefwebSearchDisasters — date normalization', () => {
   });
 });
 
+// ─── Issue #19: status is a closed vocabulary, matched the way ReliefWeb matches it ───
+
+describe('reliefwebSearchDisasters — status vocabulary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('canonicalizes a capitalized status on the service call and both echo surfaces', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({ status: 'Ongoing' });
+    const result = await reliefwebSearchDisasters.handler(input, ctx);
+
+    expect(mockSearchDisasters).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ongoing' }),
+      ctx,
+    );
+    expect(result.appliedFilters.status).toBe('ongoing');
+    const text = (reliefwebSearchDisasters.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('status=ongoing');
+  });
+
+  it('keeps comma-separated multi-value working, canonicalizing each token', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({ status: 'ongoing,alert' });
+    const result = await reliefwebSearchDisasters.handler(input, ctx);
+
+    expect(mockSearchDisasters).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ongoing,alert' }),
+      ctx,
+    );
+    expect(result.appliedFilters.status).toBe('ongoing,alert');
+  });
+
+  it('tolerates whitespace around each token of a multi-value status', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({ status: ' PAST , Alert-Archive ' });
+    const result = await reliefwebSearchDisasters.handler(input, ctx);
+
+    expect(mockSearchDisasters).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'past,alert-archive' }),
+      ctx,
+    );
+    expect(result.appliedFilters.status).toBe('past,alert-archive');
+  });
+
+  it('rejects a status ReliefWeb never returns, naming the real ones', async () => {
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
+    const input = reliefwebSearchDisasters.input.parse({ status: 'archive' });
+
+    const err = (await reliefwebSearchDisasters
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err).toBeInstanceOf(McpError);
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'unknown_status' });
+    expect(err.message).toContain('"archive"');
+    expect(err.message).toContain('ongoing');
+    expect(err.message).toContain('alert-archive');
+    expect(mockSearchDisasters).not.toHaveBeenCalled();
+  });
+
+  it('rejects the whole filter when one token of a multi-value status is unknown', async () => {
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
+    const input = reliefwebSearchDisasters.input.parse({ status: 'ongoing,current' });
+
+    const err = (await reliefwebSearchDisasters
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err.data).toMatchObject({ reason: 'unknown_status' });
+    expect(err.message).toContain('"current"');
+    expect(err.message).not.toContain('"ongoing"');
+    expect(mockSearchDisasters).not.toHaveBeenCalled();
+  });
+
+  it('recovery hint points at include_archived for alert-archive', async () => {
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
+    const input = reliefwebSearchDisasters.input.parse({ status: 'nonsense' });
+
+    const err = (await reliefwebSearchDisasters
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect((err.data as { recovery: { hint: string } }).recovery.hint).toContain(
+      'include_archived',
+    );
+  });
+});
+
 // ─── Issue #22: paged past the end of a result set ───────────────────────────
 
 describe('reliefwebSearchDisasters — offset past the end of the result set', () => {

@@ -17,13 +17,18 @@ import {
   rejectedQueryMessage,
   upstreamErrorMessage,
 } from '@/services/reliefweb/upstream-errors.js';
+import {
+  DISASTER_STATUSES,
+  resolveVocabulary,
+  unknownValueMessage,
+} from '@/services/reliefweb/vocabularies.js';
 
 export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
   title: 'Search ReliefWeb Disasters',
   description:
     'Search active and historical disasters on ReliefWeb by type, country, status, date range, and GLIDE number. ' +
-    'Default preset covers alert, current, and past disasters. ' +
-    'Use include_archived=true to include alert-archive and archive entries for historical research. ' +
+    'Default preset covers alert, ongoing, and past disasters. ' +
+    'Use include_archived=true to reach alert-archive entries as well, for historical research. ' +
     'Returns IDs suitable for use with reliefweb_get_disaster and as disaster_id filter in reliefweb_search_reports.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
@@ -47,7 +52,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       .string()
       .optional()
       .describe(
-        'Disaster status filter. Values: alert (newly declared), current (ongoing), past (resolved), alert-archive, archive. Separate multiple values with commas. Default preset includes alert, current, past.',
+        'Disaster status filter. One of: alert (newly declared), ongoing, past (resolved), alert-archive. Separate multiple values with commas; case, spacing, and punctuation are ignored, and any other value is rejected with the valid list. alert-archive is only reachable with include_archived=true — asking for it without that returns nothing.',
       ),
     glide: z
       .string()
@@ -93,7 +98,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       .boolean()
       .optional()
       .describe(
-        'Include alert-archive and archive disasters in results. Uses preset=analysis. Off by default.',
+        'Include alert-archive disasters in results, alongside alert, ongoing, and past. Uses preset=analysis. Off by default.',
       ),
     limit: z
       .number()
@@ -123,7 +128,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
             status: z
               .string()
               .optional()
-              .describe('Disaster status (alert, current, past, archive).'),
+              .describe('Disaster status: alert, ongoing, past, or alert-archive.'),
             glide: z.string().optional().describe('GLIDE number for cross-system correlation.'),
             dateEvent: z.string().optional().describe('Event date (ISO 8601), when available.'),
             dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
@@ -147,7 +152,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
         status: z
           .string()
           .optional()
-          .describe('Status filter applied (comma-joined when multiple).'),
+          .describe('Status filter applied, in canonical spelling (comma-joined when multiple).'),
         glide: z.string().optional().describe('GLIDE number filter applied.'),
         dateFrom: z.string().optional().describe('Earliest creation date filter applied.'),
         dateTo: z.string().optional().describe('Latest creation date filter applied.'),
@@ -175,9 +180,16 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
   },
   errors: [
     {
+      reason: 'unknown_status',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A status token does not name a ReliefWeb disaster status.',
+      recovery:
+        'Use the status values listed in the error message, comma-separated for more than one; case, spacing, and punctuation do not matter. alert-archive additionally needs include_archived=true.',
+    },
+    {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
-      when: 'ReliefWeb rejected the query — an unrecognized sort field, an unknown status value, or a malformed date.',
+      when: 'ReliefWeb rejected the query — an unrecognized sort field or a malformed date.',
       recovery:
         'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort fields must be real ReliefWeb field names, and dates take a calendar date or a full ISO 8601 datetime.',
     },
@@ -202,11 +214,20 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     const dateFrom = resolveDateBound(input.date_from, 'from');
     const dateTo = resolveDateBound(input.date_to, 'to');
 
+    const status = resolveVocabulary(input.status, DISASTER_STATUSES, { multiValue: true });
+    if (status.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_status',
+        unknownValueMessage('status', status.unmatched, DISASTER_STATUSES),
+        ctx.recoveryFor('unknown_status'),
+      );
+    }
+
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
       ...(country ? { country } : {}),
       ...(input.disaster_type?.trim() ? { disasterType: input.disaster_type } : {}),
-      ...(input.status?.trim() ? { status: input.status } : {}),
+      ...(status.value ? { status: status.value } : {}),
       ...(input.glide?.trim() ? { glide: input.glide } : {}),
       ...(dateFrom ? { dateFrom } : {}),
       ...(dateTo ? { dateTo } : {}),
@@ -222,7 +243,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
           ...(input.text?.trim() ? { text: input.text } : {}),
           ...(country ? { country } : {}),
           ...(input.disaster_type?.trim() ? { disasterType: input.disaster_type } : {}),
-          ...(input.status?.trim() ? { status: input.status } : {}),
+          ...(status.value ? { status: status.value } : {}),
           ...(input.glide?.trim() ? { glide: input.glide } : {}),
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
@@ -266,7 +287,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       if (input.text) filters.push(`text="${input.text}"`);
       if (country) filters.push(`country=${country}`);
       if (input.disaster_type) filters.push(`type="${input.disaster_type}"`);
-      if (input.status) filters.push(`status=${input.status}`);
+      if (status.value) filters.push(`status=${status.value}`);
       if (input.glide) filters.push(`glide=${input.glide}`);
       if (dateFrom) filters.push(`date_from=${dateFrom}`);
       if (dateTo) filters.push(`date_to=${dateTo}`);

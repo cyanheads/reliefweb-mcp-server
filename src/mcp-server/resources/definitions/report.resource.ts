@@ -4,7 +4,8 @@
  */
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
-import { notFound, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { notFound } from '@cyanheads/mcp-ts-core/errors';
+import { parseResourceId } from '@/mcp-server/resources/resource-ids.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 export const reportResource = resource('reliefweb://reports/{id}', {
@@ -15,14 +16,13 @@ export const reportResource = resource('reliefweb://reports/{id}', {
     'Equivalent to calling reliefweb_get_report.',
   mimeType: 'application/json',
   params: z.object({
-    id: z.string().describe('ReliefWeb numeric report ID.'),
+    id: z
+      .string()
+      .describe('ReliefWeb numeric report ID — digits only, exactly as search returned it.'),
   }),
 
   async handler(params, ctx) {
-    const id = parseInt(params.id, 10);
-    if (Number.isNaN(id) || id <= 0) {
-      throw validationError(`Invalid report ID "${params.id}". Must be a positive integer.`);
-    }
+    const id = parseResourceId(params.id, 'report');
     ctx.log.debug('reliefweb://reports/{id}', { id });
     const report = await getReliefWebService().getReport(id, ctx);
     if (!report) {

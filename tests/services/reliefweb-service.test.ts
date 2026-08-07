@@ -518,6 +518,7 @@ describe('ReliefWebService — search request shape', () => {
     filter?: unknown;
     query?: { value?: string; fields?: string[]; operator?: string };
     sort?: string[];
+    preset?: string;
   } {
     const call = vi.mocked(globalThis.fetch).mock.calls.at(-1);
     const init = call?.[1] as RequestInit | undefined;
@@ -525,6 +526,7 @@ describe('ReliefWebService — search request shape', () => {
       filter?: unknown;
       query?: { value?: string; fields?: string[]; operator?: string };
       sort?: string[];
+      preset?: string;
     };
   }
 
@@ -601,6 +603,48 @@ describe('ReliefWebService — search request shape', () => {
     await makeService().searchJobs({ sort: 'date.closing:asc' }, createMockContext());
 
     expect(lastPostedQuery().sort).toEqual(['date.closing:asc']);
+  });
+
+  // Issue #18: the jobs and training archives sit behind preset=analysis; reports have
+  // no archived class, so their query stays on latest whatever the caller asks for.
+  it('searchJobs sends preset=analysis when includeArchived is set', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchJobs({ includeArchived: true }, createMockContext());
+
+    expect(lastPostedQuery().preset).toBe('analysis');
+  });
+
+  it('searchJobs defaults to preset=latest — open postings only', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchJobs({}, createMockContext());
+
+    expect(lastPostedQuery().preset).toBe('latest');
+  });
+
+  it('searchTraining sends preset=analysis when includeArchived is set', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchTraining({ includeArchived: true }, createMockContext());
+
+    expect(lastPostedQuery().preset).toBe('analysis');
+  });
+
+  it('searchTraining defaults to preset=latest — current listings only', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchTraining({}, createMockContext());
+
+    expect(lastPostedQuery().preset).toBe('latest');
+  });
+
+  it('searchReports always sends preset=latest — reports have no archived class', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchReports({ country: 'TUV' }, createMockContext());
+
+    expect(lastPostedQuery().preset).toBe('latest');
   });
 
   it('threads already-resolved date bounds into the range filter verbatim (issue #21)', async () => {

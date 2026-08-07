@@ -246,7 +246,6 @@ export class ReliefWebService {
       dateFrom?: string;
       dateTo?: string;
       sort?: string;
-      includeArchived?: boolean;
       rawFilter?: FilterCondition;
       limit?: number;
       offset?: number;
@@ -271,7 +270,13 @@ export class ReliefWebService {
       fields: { include: REPORT_LIST_FIELDS },
       ...(filter ? { filter } : {}),
       sort: [params.sort ?? 'date.original:desc'],
-      preset: params.includeArchived ? 'analysis' : 'latest',
+      /**
+       * Reports carry no archived class — `latest`, `minimal`, and `analysis` all return
+       * the same 1.14M records, and the whole-corpus `status` facet holds only `published`
+       * and `to-review`, neither of which any preset excludes. So there is no archive to
+       * unlock here and no preset to choose between.
+       */
+      preset: 'latest',
       limit: params.limit ?? 10,
       offset: params.offset ?? 0,
     };
@@ -409,6 +414,7 @@ export class ReliefWebService {
       theme?: string;
       experience?: string;
       sort?: string;
+      includeArchived?: boolean;
       limit?: number;
       offset?: number;
     },
@@ -429,7 +435,11 @@ export class ReliefWebService {
       fields: { include: JOB_LIST_FIELDS },
       ...(filter ? { filter } : {}),
       sort: [params.sort ?? 'date.created:desc'],
-      preset: 'latest',
+      /**
+       * `latest` serves only the currently-open postings; the expired ones — two orders of
+       * magnitude more of them — live behind `analysis`. Same split as disasters.
+       */
+      preset: params.includeArchived ? 'analysis' : 'latest',
       limit: params.limit ?? 10,
       offset: params.offset ?? 0,
     };
@@ -455,6 +465,7 @@ export class ReliefWebService {
       dateStartFrom?: string;
       dateStartTo?: string;
       sort?: string;
+      includeArchived?: boolean;
       limit?: number;
       offset?: number;
     },
@@ -479,7 +490,8 @@ export class ReliefWebService {
       ...(filter ? { filter } : {}),
       // Soonest-starting first — the "upcoming training" purpose the tool documents.
       sort: [params.sort ?? 'date.start:asc'],
-      preset: 'latest',
+      /** `latest` serves the current listings; the concluded ones live behind `analysis`. */
+      preset: params.includeArchived ? 'analysis' : 'latest',
       limit: params.limit ?? 10,
       offset: params.offset ?? 0,
     };

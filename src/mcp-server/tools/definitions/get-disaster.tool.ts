@@ -25,7 +25,10 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
   output: z.object({
     id: z.number().describe('ReliefWeb numeric disaster ID.'),
     name: z.string().describe('Disaster name.'),
-    status: z.string().optional().describe('Disaster status (alert, current, past, archive).'),
+    status: z
+      .string()
+      .optional()
+      .describe('Disaster status: alert, ongoing, past, or alert-archive.'),
     glide: z.string().optional().describe('GLIDE number for cross-system correlation.'),
     dateEvent: z.string().optional().describe('Event date (ISO 8601), when available.'),
     dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),

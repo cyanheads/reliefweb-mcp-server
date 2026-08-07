@@ -52,7 +52,8 @@ Search humanitarian reports on ReliefWeb with rich filtering.
 - Date range filtering on source publication date — a bare `2024-01-15` is accepted alongside full ISO 8601
 - Raw filter object for compound conditions not covered by named params
 - Pagination via offset and limit (up to 1,000 per call)
-- Optional `include_archived=true` for historical research (includes expired and archived content)
+- Format is a closed set: `News and Press Release`, `Situation Report`, `Map`, `Infographic`, `Analysis`, `Other`, `Assessment`, `Manual and Guideline`, `Appeal`, `UN Document`, `Evaluation and Lessons Learned` — matched ignoring case, spacing, and punctuation; anything else is rejected with the list
+- `include_archived` has no effect here — reports have no archived class, so all of them are in scope by default
 - Returns paginated summaries — use `reliefweb_get_report` to fetch full body text
 - Rate limit: 1,000 calls/day
 
@@ -75,8 +76,8 @@ Search active and historical disasters on ReliefWeb.
 - Filtering by disaster type (Earthquake, Flood, Cyclone, etc.), country, and status
 - GLIDE number lookup for cross-system disaster correlation
 - Date range filtering on disaster creation date — a bare `2024-01-15` is accepted alongside full ISO 8601
-- Status values: `alert`, `current`, `past`, `alert-archive`, `archive`; multiple values comma-separated
-- Optional `include_archived=true` for historical research
+- Status values: `alert`, `ongoing`, `past`, `alert-archive`; multiple values comma-separated, matched ignoring case, spacing, and punctuation
+- Optional `include_archived=true` to reach `alert-archive` entries, which the default preset hides
 - Returns IDs for use with `reliefweb_get_disaster` and as `disaster_id` filter in `reliefweb_search_reports`
 
 ---
@@ -120,7 +121,8 @@ Search humanitarian job listings on ReliefWeb.
 
 - Filtering by country, organization short name, career category, theme, and experience level
 - Career category values: Programme and Project Management, Information and Communications Technology, Logistics and Telecommunications, and others
-- Returns current open positions — archived jobs excluded by default
+- Returns current open positions — expired postings excluded by default
+- Optional `include_archived=true` to search expired postings too; the archive dwarfs the open set, so use it for labour-market history rather than a hiring snapshot
 - Sortable by newest posting (`date.created:desc`, default) or soonest closing (`date.closing:asc`)
 - Pagination with closing date and canonical URL per listing
 
@@ -134,6 +136,7 @@ Search humanitarian training and learning opportunities.
 - Filtering by country, source, format, career category, and language
 - Date range filtering on training start date (`date_start_from` / `date_start_to`) — a bare `2024-06-01` is accepted alongside full ISO 8601
 - Scoped to training starting from now when neither bound is given; supply either one to search an explicit range, including a historical one
+- Optional `include_archived=true` to search concluded listings too; it also drops the start-from-now default bound, so an otherwise unbounded search reaches the whole record
 - Ordered by soonest start date by default (`date.start:asc`); override with `sort`
 - Distinct from report date fields — uses `date.start` / `date.end`
 
@@ -151,8 +154,8 @@ Browse organizations that contribute content to ReliefWeb.
 
 | Type | Name | Description |
 |:---|:---|:---|
-| Resource | `reliefweb://reports/{id}` | Full report record by numeric ID — metadata, body text, and file URLs |
-| Resource | `reliefweb://disasters/{id}` | Disaster record by numeric ID — type, status, GLIDE, description, and content links |
+| Resource | `reliefweb://reports/{id}` | Full report record by numeric ID — metadata, body text, and file URLs. The ID segment must be digits only |
+| Resource | `reliefweb://disasters/{id}` | Disaster record by numeric ID — type, status, GLIDE, description, and content links. The ID segment must be digits only |
 | Resource | `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, and active response plans |
 | Prompt | `reliefweb_crisis_briefing` | Generate a structured humanitarian briefing for a country or disaster |
 

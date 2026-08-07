@@ -83,6 +83,56 @@ describe('reportResource', () => {
     expect(mockGetReport).not.toHaveBeenCalled();
   });
 
+  it('rejects an ID with trailing junk instead of serving the numeric prefix', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/4221539junk') });
+
+    await expect(reportResource.handler({ id: '4221539junk' }, ctx)).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+    });
+    expect(mockGetReport).not.toHaveBeenCalled();
+  });
+
+  it('throws ValidationError for a float ID string', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/1.5') });
+
+    await expect(reportResource.handler({ id: '1.5' }, ctx)).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+    });
+    expect(mockGetReport).not.toHaveBeenCalled();
+  });
+
+  it('rejects scientific notation rather than reading its leading digit', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/1e3') });
+
+    await expect(reportResource.handler({ id: '1e3' }, ctx)).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+    });
+    expect(mockGetReport).not.toHaveBeenCalled();
+  });
+
+  it('names the rejected ID and what a valid one looks like', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/4221539junk') });
+
+    const err = (await reportResource
+      .handler({ id: '4221539junk' }, ctx)
+      .catch((e: unknown) => e)) as Error;
+
+    expect(err.message).toContain('4221539junk');
+    expect(err.message).toContain('digits only');
+  });
+
+  it('rejects a zero-padded ID, naming the leading zero as the reason', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/004221539') });
+
+    const err = (await reportResource
+      .handler({ id: '004221539' }, ctx)
+      .catch((e: unknown) => e)) as Error & { code?: number };
+
+    expect(err.code).toBe(VALIDATION_CODE);
+    expect(err.message).toContain('leading zero');
+    expect(mockGetReport).not.toHaveBeenCalled();
+  });
+
   it('throws NotFound when report does not exist', async () => {
     mockGetReport.mockResolvedValue(null);
 
@@ -135,14 +185,37 @@ describe('reportResource', () => {
     expect(mockGetReport).not.toHaveBeenCalled();
   });
 
-  it('handles oversized ID string gracefully', async () => {
+  it('rejects an all-digit ID past the exact-integer range instead of querying a rounded one', async () => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/9007199254740993') });
+
+    const err = (await reportResource
+      .handler({ id: '9007199254740993' }, ctx)
+      .catch((e: unknown) => e)) as Error & { code?: number };
+
+    expect(err.code).toBe(VALIDATION_CODE);
+    expect(err.message).toContain('9007199254740993');
+    expect(err.message).toContain('larger than any ReliefWeb record ID');
+    expect(mockGetReport).not.toHaveBeenCalled();
+  });
+
+  it('rejects a thousand-digit ID rather than resolving it to Infinity', async () => {
     const oversized = '9'.repeat(1000);
     const ctx = createMockContext({ uri: new URL('reliefweb://reports/x') });
 
-    // parseInt on a very large number string may produce Infinity or a large int
-    // The handler either calls service with a huge number or rejects — either way it should not crash
-    mockGetReport.mockResolvedValue(null);
-    // If it doesn't throw ValidationError, it throws NotFound (parsed as big int, not found)
-    await expect(reportResource.handler({ id: oversized }, ctx)).rejects.toBeDefined();
+    const err = (await reportResource
+      .handler({ id: oversized }, ctx)
+      .catch((e: unknown) => e)) as Error & { code?: number };
+
+    expect(err.code).toBe(VALIDATION_CODE);
+    expect(mockGetReport).not.toHaveBeenCalled();
+  });
+
+  it('still resolves the largest exactly-representable ID', async () => {
+    mockGetReport.mockResolvedValue({ id: 9007199254740991, title: 'Boundary' });
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/9007199254740991') });
+
+    await reportResource.handler({ id: '9007199254740991' }, ctx);
+
+    expect(mockGetReport).toHaveBeenCalledWith(9007199254740991, ctx);
   });
 });

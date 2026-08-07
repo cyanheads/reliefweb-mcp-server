@@ -18,6 +18,11 @@ import {
   rejectedQueryMessage,
   upstreamErrorMessage,
 } from '@/services/reliefweb/upstream-errors.js';
+import {
+  REPORT_FORMATS,
+  resolveVocabulary,
+  unknownValueMessage,
+} from '@/services/reliefweb/vocabularies.js';
 
 export const reliefwebSearchReports = tool('reliefweb_search_reports', {
   title: 'Search ReliefWeb Reports',
@@ -25,7 +30,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     'Search humanitarian reports on ReliefWeb with filtering by country, disaster, format, theme, language, source, and date. ' +
     'Returns paginated summaries — use reliefweb_get_report to fetch full body text. ' +
     'Report body is excluded from results (10–100KB each); call get_report when document content is needed. ' +
-    'Use preset include_archived=true to include expired or archived reports in historical research. ' +
+    'Every report is reachable by default — reports have no archived class, so include_archived has no effect here. ' +
     'Note: each call counts against the 1,000 calls/day quota.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
@@ -52,13 +57,13 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .string()
       .optional()
       .describe(
-        'Content format filter. Valid values: Situation Report, Assessment, Analysis, Map, Infographic, Manual and Guideline, News and Press Release, Policy Document, Appeal, Financial Report, Evaluation and Lessons Learned, Other.',
+        `Content format filter. One of: ${REPORT_FORMATS.join(', ')}. Case, spacing, and punctuation are ignored; any other value is rejected with the valid list.`,
       ),
     theme: z
       .string()
       .optional()
       .describe(
-        'Sector or cross-cutting theme (e.g., Health, Food and Nutrition, Shelter and NFI, Protection). Matches theme.name.',
+        'Sector or cross-cutting theme (e.g., Health, Food and Nutrition, Shelter and Non-Food Items, Protection). Open-ended — matches theme.name exactly as ReliefWeb spells it.',
       ),
     language: z
       .string()
@@ -106,7 +111,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .boolean()
       .optional()
       .describe(
-        'Include archived and to-review content in addition to published. Uses preset=analysis. Off by default.',
+        'No effect on reports. Reports have no archived class — every report is already in scope, whatever this is set to. Kept so existing calls that pass it keep working; it is meaningful on reliefweb_search_jobs, reliefweb_search_training, and reliefweb_search_disasters.',
       ),
     filter: z
       .record(z.string(), z.unknown())
@@ -171,7 +176,10 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         text: z.string().optional().describe('Full-text query the search used.'),
         country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
         disasterId: z.number().optional().describe('Disaster ID filter applied.'),
-        format: z.string().optional().describe('Format name filter applied.'),
+        format: z
+          .string()
+          .optional()
+          .describe('Format name filter applied, in its canonical ReliefWeb spelling.'),
         theme: z.string().optional().describe('Theme name filter applied.'),
         language: z.string().optional().describe('Language code filter applied.'),
         source: z.string().optional().describe('Source short name filter applied.'),
@@ -185,7 +193,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         preset: z
           .string()
           .describe(
-            'ReliefWeb preset the query used: latest (default) or analysis when include_archived.',
+            'ReliefWeb preset the query used. Always latest for reports — no preset changes which reports match.',
           ),
         limit: z.number().describe('Result limit the query used.'),
         offset: z.number().describe('Pagination offset the query used.'),
@@ -204,6 +212,13 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       ),
   },
   errors: [
+    {
+      reason: 'unknown_format',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'The format value does not name a ReliefWeb report format.',
+      recovery:
+        'Use one of the format names listed in the error message; case, spacing, and punctuation do not matter, but the name itself must match.',
+    },
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
@@ -231,11 +246,20 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     const dateFrom = resolveDateBound(input.date_from, 'from');
     const dateTo = resolveDateBound(input.date_to, 'to');
 
+    const format = resolveVocabulary(input.format, REPORT_FORMATS);
+    if (format.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_format',
+        unknownValueMessage('format', format.unmatched, REPORT_FORMATS),
+        ctx.recoveryFor('unknown_format'),
+      );
+    }
+
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
       ...(country ? { country } : {}),
       ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
-      ...(input.format?.trim() ? { format: input.format } : {}),
+      ...(format.value ? { format: format.value } : {}),
       ...(input.theme?.trim() ? { theme: input.theme } : {}),
       ...(input.language?.trim() ? { language: input.language } : {}),
       ...(input.source?.trim() ? { source: input.source } : {}),
@@ -243,7 +267,12 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       ...(dateTo ? { dateTo } : {}),
       ...(input.filter != null ? { rawFilter: true } : {}),
       sort: input.sort?.trim() || 'date.original:desc',
-      preset: input.include_archived ? 'analysis' : 'latest',
+      /**
+       * Every preset returns the identical report set — the corpus carries no archived
+       * class — so the echo names the one preset the query runs under rather than flipping
+       * on `include_archived` and implying a coverage difference that does not exist.
+       */
+      preset: 'latest',
       limit: input.limit,
       offset: input.offset,
     };
@@ -254,14 +283,13 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
           ...(input.text?.trim() ? { text: input.text } : {}),
           ...(country ? { country } : {}),
           ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
-          ...(input.format?.trim() ? { format: input.format } : {}),
+          ...(format.value ? { format: format.value } : {}),
           ...(input.theme?.trim() ? { theme: input.theme } : {}),
           ...(input.language?.trim() ? { language: input.language } : {}),
           ...(input.source?.trim() ? { source: input.source } : {}),
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
-          ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
           ...(input.filter != null ? { rawFilter: input.filter as FilterCondition } : {}),
           limit: input.limit,
           offset: input.offset,
@@ -301,7 +329,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       if (input.text) filters.push(`text="${input.text}"`);
       if (country) filters.push(`country=${country}`);
       if (input.disaster_id != null) filters.push(`disaster_id=${input.disaster_id}`);
-      if (input.format) filters.push(`format="${input.format}"`);
+      if (format.value) filters.push(`format="${format.value}"`);
       if (input.theme) filters.push(`theme="${input.theme}"`);
       if (input.language) filters.push(`language=${input.language}`);
       if (input.source) filters.push(`source="${input.source}"`);
