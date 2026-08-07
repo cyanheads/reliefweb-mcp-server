@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-08-06
+
+reliefweb_get_job and reliefweb_get_training complete the search-to-get pattern for jobs and training, all five by-ID detail tools outline oversized records instead of truncating them, and reliefweb_get_country/reliefweb_get_disaster can page each curated list's archived entries.
+
 ## [0.1.16](changelog/0.1.x/0.1.16.md) — 2026-08-06
 
 search_reports.format and search_disasters.status now match ReliefWeb's real closed vocabularies and reject unmatched values instead of returning an empty page, include_archived reaches the jobs and training archives, and malformed resource URI IDs are rejected instead of silently coerced to a different record.
