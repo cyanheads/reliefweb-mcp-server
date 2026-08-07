@@ -1,13 +1,13 @@
 <div align="center">
   <h1>@cyanheads/reliefweb-mcp-server</h1>
   <p><b>Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.</b>
-  <div>9 Tools • 3 Resources • 1 Prompt</div>
+  <div>11 Tools • 3 Resources • 1 Prompt</div>
   </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.16-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.30.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.14-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.30.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.14-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -29,7 +29,7 @@
 
 ## Tools
 
-9 tools for working with ReliefWeb humanitarian data:
+11 tools for working with ReliefWeb humanitarian data:
 
 | Tool | Description |
 |:---|:---|
@@ -40,8 +40,28 @@
 | `reliefweb_get_country` | Fetch a country profile by ISO3 code with overview, appeals, and curated links |
 | `reliefweb_list_countries` | List all countries tracked by ReliefWeb, filterable to active humanitarian situations |
 | `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and experience level |
+| `reliefweb_get_job` | Fetch a job posting by numeric ID with the full vacancy description and application instructions |
 | `reliefweb_search_training` | Search training and learning opportunities by format, country, career category, and date — upcoming starts by default |
+| `reliefweb_get_training` | Fetch a training listing by numeric ID with the full description, registration instructions, and cost detail |
 | `reliefweb_list_sources` | Browse contributing organizations by name and type |
+
+### Oversized records
+
+The five `reliefweb_get_*` tools never truncate. Under a fixed byte budget they return the record whole; over it they return a complete section outline — every section, its real serialized size, and how to reach it — and a `sections: [...]` re-call returns exactly the named sections plus identity metadata. The re-call is self-contained: the record is re-fetched from its ID and sliced, so nothing has to be replayed. Both modes carry the same information in `structuredContent` and `content[]`.
+
+The resources always return the whole record — a resource read has no way to name sections, so reach for the tool when a record is too large.
+
+### Curated-profile archives
+
+A country or disaster profile returns only what ReliefWeb currently curates in each of its three link lists. Each list also has an archive, thousands of entries deep for a long-running crisis — Syria carries 2,328 archived key content links and 120 archived appeals and response plans. `reliefweb_get_country` and `reliefweb_get_disaster` page that archive on request:
+
+```jsonc
+{ "iso3": "SYR", "archive": { "list": "keyContent", "offset": 0, "limit": 25 } }
+```
+
+The response replaces the profile with one page: the list it came from, the true total, how many entries it holds, its offset, the entries, and the next offset while more remain — absent once the page reaches the end. Lists are `keyContent`, `appealsResponsePlans`, and `usefulLinks`, named for the fields the active half lands on.
+
+`sections` and `archive` are alternative modes and a call carrying both is rejected: `sections` slices the record, `archive` replaces it with a page. A record over the response budget still answers an archive call with the page — a page is bounded by `limit` and carries no record prose, so it never outlines.
 
 ### `reliefweb_search_reports`
 
@@ -65,6 +85,7 @@ Fetch a single ReliefWeb report by its numeric ID with full body text.
 
 - Full body HTML, all metadata, and file attachment URLs
 - Use after `reliefweb_search_reports` to retrieve document content (10–100KB each)
+- Over the response budget, returns a section outline instead; `sections: ["body"]` pulls the body back on its own
 - Returns structured `not_found` when the ID doesn't exist
 
 ---
@@ -90,6 +111,8 @@ Fetch a disaster record by ReliefWeb numeric ID with full details.
 - Currently-active curated key content links from the ReliefWeb editorial team (the present set, not the full archive)
 - Currently-active appeals and response plans linked to the disaster
 - Currently-active useful external links curated by ReliefWeb editors
+- Major disasters run to tens of KB of prose; over the response budget the record comes back as a section outline, and `sections: ["description"]` or `sections: ["profileOverview"]` pulls one narrative at a time
+- `archive: { list: "keyContent" }` pages the archived entries each curated list leaves out
 
 ---
 
@@ -102,6 +125,8 @@ Fetch a country profile from ReliefWeb by ISO3 code.
 - Currently-active humanitarian appeals and response plans
 - Currently-active useful external links for the country
 - Country profiles are the authoritative situation summary for humanitarian responders
+- `archive: { list: "keyContent" }` pages the archived entries each curated list leaves out — 2,328 of them for Syria
+- Carries the same outline-and-`sections` behavior as the other detail tools, though an active-only profile is small enough that it rarely reaches the budget
 
 ---
 
@@ -125,6 +150,20 @@ Search humanitarian job listings on ReliefWeb.
 - Optional `include_archived=true` to search expired postings too; the archive dwarfs the open set, so use it for labour-market history rather than a hiring snapshot
 - Sortable by newest posting (`date.created:desc`, default) or soonest closing (`date.closing:asc`)
 - Pagination with closing date and canonical URL per listing
+- Returns IDs for use with `reliefweb_get_job`
+
+---
+
+### `reliefweb_get_job`
+
+Fetch a job posting by ReliefWeb numeric ID with everything needed to evaluate and apply.
+
+- Full vacancy description and application instructions — neither is in search results
+- Posting status, indexed / closing / last-modified dates, hiring organization, countries, career category, experience level, and job type
+- Both canonical URLs (the readable alias and the node URL)
+- Reaches expired postings as well as open ones
+- Over the response budget, returns a section outline; `sections: ["howToApply"]` pulls the instructions without the whole description
+- Returns structured `not_found` pointing back at `reliefweb_search_jobs`
 
 ---
 
@@ -139,6 +178,21 @@ Search humanitarian training and learning opportunities.
 - Optional `include_archived=true` to search concluded listings too; it also drops the start-from-now default bound, so an otherwise unbounded search reaches the whole record
 - Ordered by soonest start date by default (`date.start:asc`); override with `sort`
 - Distinct from report date fields — uses `date.start` / `date.end`
+- Returns IDs for use with `reliefweb_get_training`
+
+---
+
+### `reliefweb_get_training`
+
+Fetch a training listing by ReliefWeb numeric ID with everything needed to evaluate and register.
+
+- Full description and registration instructions — neither is in search results
+- Cost class and the organizer's fee detail, plus the organizer's own event URL
+- Listing status, start / end / registration / indexed dates, host cities, format, type, listing and delivery languages, and organizing source
+- Both canonical URLs (the readable alias and the node URL)
+- Reaches concluded listings as well as current ones
+- Over the response budget, returns a section outline; `sections: ["cost", "feeInformation", "howToRegister"]` pulls just the practicalities
+- Returns structured `not_found` pointing back at `reliefweb_search_training`
 
 ---
 
@@ -179,7 +233,9 @@ ReliefWeb-specific:
 
 Agent-friendly output:
 
-- Body text excluded from search results by design — agents fetch it explicitly with `reliefweb_get_report` to control context budget
+- Body text excluded from search results by design — agents fetch it explicitly with the matching `reliefweb_get_*` tool to control context budget
+- Oversized records outline rather than truncate, with a section selector to retrieve what's needed
+- Curated-profile archives are paged rather than dropped, with honest totals and a next offset
 - Recovery hints on empty results — echoes applied filters and suggests how to broaden
 - Typed `not_found` error contracts on get-by-ID tools with actionable recovery text
 
@@ -316,7 +372,7 @@ All configuration is validated at startup via Zod schemas. Key environment varia
 
 | Directory | Purpose |
 |:---|:---|
-| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). Nine tools across reports, disasters, countries, jobs, training, and sources. |
+| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). Eleven tools across reports, disasters, countries, jobs, training, and sources, plus the shared pagination, section-outline, and profile-archive helpers. |
 | `src/mcp-server/resources` | Resource definitions. Report, disaster, and country resources. |
 | `src/mcp-server/prompts` | Prompt definitions. Crisis briefing prompt. |
 | `src/services/reliefweb` | ReliefWeb API service layer — HTTP client, filter builder, and response normalizers for all six content types. |

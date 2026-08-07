@@ -7,21 +7,23 @@
 | Name | Description | Key Inputs | Annotations |
 |:-----|:------------|:-----------|:------------|
 | `reliefweb_search_reports` | Search humanitarian reports with rich filtering by country, disaster, format, theme, date, source, and language. | `text`, `country`, `disaster_id`, `format`, `theme`, `language`, `source`, `date_from`, `date_to`, `sort`, `include_archived`, `filter`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_get_report` | Fetch a single report by ID with full body text, file attachments, and metadata. | `id` | `readOnlyHint: true` |
+| `reliefweb_get_report` | Fetch a single report by ID with full body text, file attachments, and metadata. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
 | `reliefweb_search_disasters` | Search active and historical disasters by type, country, status, and GLIDE number. | `text`, `country`, `disaster_type`, `status`, `glide`, `date_from`, `date_to`, `sort`, `include_archived`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_get_disaster` | Fetch a disaster record by ID including description, affected countries, and linked key content. | `id` | `readOnlyHint: true` |
-| `reliefweb_get_country` | Fetch a country profile with overview, humanitarian situation summary, key content links, and active appeals/response plans. | `iso3` | `readOnlyHint: true` |
+| `reliefweb_get_disaster` | Fetch a disaster record by ID including description, affected countries, and linked key content. Outlines its sections when over the response budget; pages a curated list's archived entries on request. | `id`, `sections`, `archive` | `readOnlyHint: true` |
+| `reliefweb_get_country` | Fetch a country profile with overview, humanitarian situation summary, key content links, and active appeals/response plans. Outlines its sections when over the response budget; pages a curated list's archived entries on request. | `iso3`, `sections`, `archive` | `readOnlyHint: true` |
 | `reliefweb_list_countries` | List all countries and territories tracked by ReliefWeb, optionally filtered by crisis status. | `crisis_only`, `limit`, `offset` | `readOnlyHint: true` |
 | `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and theme. | `text`, `country`, `source`, `career_category`, `theme`, `experience`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_get_job` | Fetch a job posting by ID with the full vacancy description, application instructions, dates, source, and taxonomy. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
 | `reliefweb_search_training` | Search humanitarian training and learning opportunities by country, format, date, source, and career category. Defaults to training starting from now when no date bound is given. | `text`, `country`, `source`, `format`, `career_category`, `language`, `date_start_from`, `date_start_to`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_get_training` | Fetch a training listing by ID with the full description, registration instructions, event URL, cost and fee detail, dates, and languages. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
 | `reliefweb_list_sources` | Browse source organizations that contribute content to ReliefWeb, optionally filtered by name or type. | `text`, `type`, `limit`, `offset` | `readOnlyHint: true` |
 
 ### Resources
 
 | URI Template | Description | Pagination |
 |:-------------|:------------|:-----------|
-| `reliefweb://reports/{id}` | Full report record by ReliefWeb ID — metadata, body, file URLs. | No |
-| `reliefweb://disasters/{id}` | Disaster record by ReliefWeb ID — type, status, affected countries, GLIDE, description. | No |
+| `reliefweb://reports/{id}` | Full report record by ReliefWeb ID — metadata, body, file URLs. Always whole, never outlined. | No |
+| `reliefweb://disasters/{id}` | Disaster record by ReliefWeb ID — type, status, affected countries, GLIDE, description. Always whole, never outlined. | No |
 | `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, key content, response plans. | No |
 
 ### Prompts
@@ -94,8 +96,8 @@ Scope: read-only. No publishing API — the Publishing API requires an org-level
 | Disaster | `GET /v2/disasters/{id}` | get by ID |
 | Country | `POST /v2/countries` | list, search |
 | Country | `GET /v2/countries/{id}` | get by RW ID (tools use iso3 filter instead) |
-| Job | `POST /v2/jobs` | search |
-| Training | `POST /v2/training` | search |
+| Job | `POST /v2/jobs` | search, get by ID (id filter under `preset: analysis`) |
+| Training | `POST /v2/training` | search, get by ID (id filter under `preset: analysis`) |
 | Source | `POST /v2/sources` | search, list |
 
 ### Report Format Values
@@ -152,11 +154,17 @@ Country profiles contain nested `profile` subfields with key content sections. A
 |:--|:-----|:--------|
 | 1 | `POST /v2/countries` with `{"filter": {"field": "iso3", "value": "<iso3>"}, "profile": "full"}` | Fetch full country profile with all sub-fields |
 
-The `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links` sub-arrays contain the curated links ReliefWeb maintains for the country — worth surfacing directly rather than forcing a separate reports search. Only the currently-active links are surfaced from each sub-array; the `archive` halves (which run to thousands of entries for long-running crises — SYR carries 2,300+ archived `key_content` links) are dropped to keep the payload within the client token budget.
+The `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links` sub-arrays contain the curated links ReliefWeb maintains for the country — worth surfacing directly rather than forcing a separate reports search. Only the currently-active links are surfaced from each sub-array; the `archive` halves (which run to thousands of entries for long-running crises — SYR carries 2,328 archived `key_content` links and 120 archived `appeals_response_plans`) are dropped to keep the payload within the client token budget. An `archive: { list, offset, limit }` call reads the dropped half back, one bounded page at a time, from the same upstream record.
+
+Like the other detail tools, the profile is returned whole under the response budget and as a section outline over it.
 
 ### `reliefweb_get_disaster` — disaster with linked content
 
-One GET (`GET /v2/disasters/{id}?appname={name}&profile=full`); the `profile` sub-object on disasters contains the same key content structure as country profiles (`profile.overview`, `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links`). As with `reliefweb_get_country`, only the currently-active links in each sub-array are surfaced (the `archive` halves are dropped). The `description` and `profile.overview` prose can together run to tens of KB for major disasters; like `reliefweb_get_report`'s body, it's returned in full, so call this only when the narrative text is needed.
+One GET (`GET /v2/disasters/{id}?appname={name}&profile=full`); the `profile` sub-object on disasters contains the same key content structure as country profiles (`profile.overview`, `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links`). As with `reliefweb_get_country`, only the currently-active links in each sub-array are surfaced, and the dropped `archive` halves are reachable through the same `archive` selector. The `description` and `profile.overview` prose can together run to tens of KB for major disasters; the record is returned whole under the response budget and as a section outline over it, so a caller who wants one narrative asks for it by name.
+
+### `reliefweb_get_job` / `reliefweb_get_training` — detail behind the archive
+
+One POST each (`POST /v2/{jobs|training}` with `{"filter": {"field": "id", "value": <id>}, "profile": "full", "preset": "analysis", "limit": 1}`). The search endpoint rather than the item endpoint, because `GET /v2/jobs/{id}` and `GET /v2/training/{id}` answer 404 once a posting expires or a training concludes — the analysis preset reaches both the current and the archived halves. The full profile carries the fields search omits: a job's `body` and `how_to_apply`, a training's `body`, `how_to_register`, `event_url`, `cost`, `fee_information`, `city`, and `training_language`.
 
 ---
 
@@ -207,9 +215,11 @@ The API's native query format (nested JSON with `filter.conditions[]`, `query.fi
 
 ReliefWeb made appname mandatory in Nov 2025. The server fails fast at startup (`parseEnvConfig`) if `RELIEFWEB_APP_NAME` is missing, rather than silently passing 403s to the LLM at query time.
 
-### 3. No direct-by-ID tool for jobs or training
+### 3. Jobs and training get by-ID tools, fetched through the search endpoint
 
-Jobs and training entities don't carry content that warrants standalone lookup — the meaningful fields (title, body, application URL) all come through search results. Adding `reliefweb_get_job` and `reliefweb_get_training` would expand the surface for marginal gain. Deferred; add if demand surfaces.
+`reliefweb_get_job` and `reliefweb_get_training` complete the search → get pattern the reports and disasters surfaces already had. Search returns field-selected summaries, so the fields a caller actually needs to act — a vacancy's `body` and `how_to_apply`, a training's `body`, `how_to_register`, `event_url`, `cost`, and `fee_information` — had no reachable path.
+
+Both fetch through `POST /v2/{type}` with an `id` filter under `preset: analysis`, not `GET /v2/{type}/{id}`. The item endpoint answers 404 for an expired posting or a concluded training, which is exactly the archived half that `include_archived` makes searchable — a search could hand back an ID the detail tool then refused. The id-filtered search reaches both halves and returns the same `profile=full` record.
 
 ### 4. Country profiles use iso3 not RW numeric IDs
 
@@ -230,6 +240,46 @@ The `preset=analysis` flag reaches archived disasters, expired job postings, and
 ### 8. `reliefweb_crisis_briefing` prompt over an instruction tool
 
 A crisis briefing is best served as a reusable prompt template (agent-invokable, client-surfaceable) rather than an instruction tool. It doesn't need live state from the server — it structures how the LLM should *use* the other tools. A prompt is the right primitive.
+
+### 9. Oversized records outline rather than truncate, uniformly across all five by-ID detail tools
+
+A ReliefWeb document record can exceed what a client will accept — `reliefweb_get_disaster({ id: 51470 })` is about 72KB, `description` alone 36,849 chars and `profileOverview` 32,389. Returning it whole preserves the data only for clients whose limit is high enough, and truncating either hides data or silently desyncs `content[]` from `structuredContent`.
+
+The framework's outline-on-overflow primitive (`outlineOnOverflow` / `selectSections` / `formatOutline` from `@cyanheads/mcp-ts-core/utils`) is adopted as-is on all five by-ID detail tools — `reliefweb_get_country` included, since a major crisis profile is exactly the record that overflows. Under the framework's default budget the record comes back whole; over it, a complete section outline with each section's real serialized size and a re-call notice; a `sections: [...]` input re-fetches the record and projects it to those sections plus identity metadata. Nothing is truncated on any path.
+
+Shared wiring lives in `src/mcp-server/tools/document-sections.ts` — the `sections` input, the output arms, the mode resolver, and the outline renderer. That module exists so a mechanism that behaves differently between two tools cannot happen; the mechanism itself is the framework's, not a local reimplementation.
+
+Two deliberate deviations from the primitive's documented shape:
+
+- The outline arm's notice is carried on `output` as **`outlineNotice`**, not `notice`. A bare `notice` on a tool with no `enrichment` block trips the linter's `enrichment-prefer-block` advisory, which is right in general and wrong here — the outline replaces the payload, so it belongs in the main body and cannot be enrichment. The arm-scoped name also reads better in a flat object that carries domain fields beside it.
+- `OUTLINE_SECTIONS` re-wraps the framework's section entry schema with an element `.describe()`, which `describe-on-fields` requires on an array of objects and the shipped `OUTLINE_VARIANT` does not carry.
+
+Every mode is rendered from field presence, never from `kind`, so each arm reaches `content[]` on its own terms. The `format-parity` linter is only a partial guard on that rule: it walks one synthetic sample carrying every optional field at once, but pins `kind` to a single enum member, so it flags a branch on any other member and passes a branch on that one. The per-mode tests are what close the gap.
+
+### 10. Archived curated-profile entries are reachable, as a bounded page, on the same tool
+
+Every curated profile list ships in two halves upstream: `active`, which the profile returns, and `archive`, which it drops. Dropping is right — restoring the archive to the default response is what made a major crisis profile 380KB and unusable — but the dropped half had no path back through any tool or resource, so 2,437 SYR entries were unreachable while the response said it was not the full historical archive.
+
+`archive: { list, offset, limit }` on `reliefweb_get_country` and `reliefweb_get_disaster` reads one list's archived half back, one page at a time. The page carries the list it came from, the true total, how many entries it holds, its offset, the entries themselves, and a `nextOffset` while entries remain past it. The absence of `nextOffset` is the end-of-archive signal, so a caller never has to derive the end from arithmetic on `total`. Both surfaces carry the whole page and the whole retrieval metadata, as everywhere else.
+
+The archive travels inside the same `profile=full` record the profile itself is read from, so paging costs one upstream call per page and nothing extra beyond it against the 1,000/day quota. Shared wiring lives in `src/mcp-server/tools/profile-archive.ts` — the input selector, the output page, the pagination arithmetic, the renderer, and the conflict text — so the two tools cannot page an archive differently.
+
+Two deliberate deviations from the shape the tracking issue described:
+
+- The selectable unit is named `list`, not `section`. The issue calls these profile *sections*, but `sections` was already the outline selector on the same tool, and two selectors sharing one word is unreadable from the schema alone.
+- List values are the domain field names (`keyContent`), not the raw API keys (`key_content`), so the value a caller sends matches the field they read the active half from.
+
+### 11. `sections` and `archive` are alternative modes, and supplying both is an error
+
+The two selectors answer different questions. `sections` projects the record down to named parts of itself; `archive` replaces the record with a page of one list's archived entries. Nothing sensible comes of combining them — an archive page is not a part of the record, and projecting a record that is not being returned selects nothing — so a call carrying both is rejected as `selector_conflict` rather than letting one win silently. Silently dropping the other leaves a caller reading a plausible answer to a question they did not ask.
+
+A record over the outline budget still answers an archive call with the page, never an outline. That holds structurally, not arithmetically: archive mode does not take the profile fetch at all — it reads identity metadata and the requested archive from the same upstream record — so the only code path that can outline is never reached, whatever the page weighs. Size is a separate, softer question. A page carries none of the record's prose and is bounded by `limit` (100 entries maximum), which keeps it well inside the same budget in practice: the deepest archives on ReliefWeb serialize a 100-entry page to about 16KB against a 24KB budget. Nothing forces that, though — a page of unusually long titles could in principle run past it, and would simply be a large response, since the archive path has no cap and nothing to truncate.
+
+A separate `reliefweb_get_profile_archive` tool would have sidestepped the two-selector question. It was rejected because it splits one record's data across two tool surfaces, needs its own country-versus-disaster discriminator, and hides the retrieval path from the caller who is already reading the tool whose response disclosed the omission.
+
+### 12. An unrecognized `sections` name projects to nothing rather than failing
+
+`selectSections` is a pure projection — a name that is not a top-level key of the record contributes nothing, and the response is identity metadata plus whatever else matched. Erroring instead would have to treat "not a section of this record type" and "a real section this sparse record happens to lack" identically, and the second is routine: a disaster with no active `keyContent` never lists it in the outline. The outline is the contract for what is nameable, and it lists only sections the record actually has.
 
 ---
 
@@ -263,7 +313,10 @@ Retry on 5xx and network errors with exponential backoff. Do not retry 4xx respo
 
 - **1,000 calls/day limit** — for bulk analysis tasks, users must cache results or request a limit increase from OCHA. The server exposes pagination and offsets to make efficient use of the budget.
 - **Appname approval delay** — ReliefWeb reviews appname requests manually. New users can't self-serve immediately; they must wait for OCHA approval before the server will work.
-- **No full-text body in search results** — the `body` field is large (often 10–100KB per report). It's excluded from list results and only fetched in `reliefweb_get_report`. Agents must call `get_report` for document content.
+- **No full-text body in search results** — the `body` field is large (often 10–100KB per report). It's excluded from list results and only fetched by the matching by-ID tool. Agents must call `get_report`, `get_disaster`, `get_job`, or `get_training` for document content.
+- **Sub-section outlining is out of scope** — the outline addresses top-level sections. A record whose single largest section alone exceeds the budget is returned whole (the framework short-circuits an outline of fewer than two sections), and a `sections: ["body"]` selection returns that section at full size however large it is. The mechanism bounds the default response, not every possible one.
+- **Resources have no section or archive selector** — a resource read carries no way to name sections or page an archive, so `reliefweb://reports/{id}`, `reliefweb://disasters/{id}`, and `reliefweb://countries/{iso3}` always return the whole active record. Their descriptions say so and point at the tools.
+- **Archive pages are not filterable or sortable** — the archive comes back in ReliefWeb's own order and is served by offset alone. There is no upstream index over it, so any filter would mean fetching the whole list and scanning it locally, which is what pagination exists to avoid.
 - **No geospatial queries** — ReliefWeb's API filters by country, not bounding box or coordinates. Pairing with NWS/earthquake servers is the right path for geo-contextual disaster research.
 - **Publishing API is separate** — creating or updating ReliefWeb content requires a Publishing API key and separate auth flow. This server is read-only.
 - **Data quality is editorial, not real-time** — ReliefWeb content is curated by OCHA editors. There can be a lag between a disaster event and indexed reports.
@@ -334,6 +387,16 @@ ISO 8601: `2024-01-15T00:00:00+00:00`. Filter range uses `from`/`to` keys under 
 GET https://api.reliefweb.int/v2/{content_type}/{id}?appname={name}&profile=full
 ```
 
+The response envelope is a `data` array, not a bare object — the record is `data[0]`.
+
+This endpoint serves only what the default status filters admit: it answers 404 for a job whose posting expired or a training that concluded, even though the record is still in the corpus and still reachable by search. For those two content types the equivalent fetch is an id-filtered search under the archive-reaching preset:
+
+```json
+{ "filter": { "field": "id", "value": 4221508 }, "profile": "full", "preset": "analysis", "limit": 1 }
+```
+
+A miss is `totalCount: 0` rather than a 404.
+
 ---
 
 ## Decisions Log
@@ -357,4 +420,12 @@ GET https://api.reliefweb.int/v2/{content_type}/{id}?appname={name}&profile=full
 | 2026-08-06 | `include_archived` kept on `search_reports` as a documented no-op; the echoed preset stops flipping | Reports carry no archived class — `latest`, `minimal`, and `analysis` all return the same 1.14M records — so the parameter never changed a result set. Removing it would break an existing tool's input contract, so it stays, described plainly as having no effect, and the query and the echoed `appliedFilters.preset` are both pinned to `latest`. Echoing `analysis` while nothing changed was the misleading half: it implied a coverage difference that does not exist. |
 | 2026-08-06 | `include_archived` on `search_training` also drops the start-from-now lower bound | The bound exists so an unbounded default answers "what is coming up". A caller who turns on the archive is asking for the historical record, and keeping a now-bound would hide exactly the concluded listings the flag exists to reach — leaving the parameter as inert on training as it was on reports. An explicit `date_start_from` still wins. |
 | 2026-08-06 | Resource URI IDs must be a positive integer end to end | `parseInt` stops at the first character it cannot read, so `reliefweb://reports/4221539junk` served report 4221539 and `1.5` served record 1 — a malformed URI silently returned a record the caller never asked for, with nothing in the response to say so. The whole segment is now matched against `^[1-9]\d*$` and range-checked with `Number.isSafeInteger` before any upstream call. The tools were never affected: their ID inputs are already `z.number().int().positive()`. |
+| 2026-08-06 | `reliefweb_get_job` and `reliefweb_get_training` added, superseding the 2026-05-23 decision to skip them | Search returns field-selected summaries, so a job's `body` / `how_to_apply` and a training's `body` / `how_to_register` / `event_url` / `cost` / `fee_information` were unreachable through the whole surface — the two workflows those content types exist for, evaluating a vacancy and evaluating a training, could not be completed. The earlier read that the meaningful fields all came through search was wrong about which fields those are. |
+| 2026-08-06 | Job and training detail fetch through `POST /v2/{type}` with an `id` filter and `preset: analysis`, not `GET /v2/{type}/{id}` | The item endpoint answers 404 for an expired posting or a concluded training (verified on jobs 4221508 and training 4188583, both `status: expired`), while the same IDs resolve through an id-filtered analysis-preset search. Those archived records are precisely what `include_archived` search surfaces, so the item endpoint would have let search hand back IDs the detail tool refused. Reports and disasters keep the item endpoint — their corpora carry no archived class that hides a record from it. |
+| 2026-08-06 | Outline-on-overflow adopted from the framework on all four by-ID document tools, wired through one shared module | An oversized record previously had no recovery path: a client that could not accept 72KB simply could not read disaster 51470. Truncating is not an option (it hides data, or desyncs `content[]` from `structuredContent`), and DataCanvas is for row sets, not one fat document. The framework primitive is used as shipped — `outlineOnOverflow`, `selectSections`, `formatOutline` — rather than reimplemented, and `document-sections.ts` pins the input field, output arms, and renderer so the four tools cannot drift apart. The budget is the framework default on every tool, since a per-tool threshold would make the same overflow behave differently by record type. |
+| 2026-08-06 | The outline arm's notice is `outlineNotice` in `output` | A field literally named `notice` on a tool with no `enrichment` block trips `enrichment-prefer-block`, whose advice does not apply: the outline replaces the payload, so it must be in the main body, and enrichment is additive by construction. Renaming the arm's own key is the honest fix — it also disambiguates the arm in a flat object that carries domain fields alongside it — where suppressing a warning or fabricating an enrichment block would not be. |
+| 2026-08-06 | Archived curated-profile entries reachable via `archive: { list, offset, limit }`, active-only default kept | The active-only default exists because restoring the archives rebuilt a 380KB+ profile that made major crisis countries unusable — but the dropped half had no path back through any tool or resource, so a SYR profile disclosed an omission of 2,437 entries and offered nothing to reach them. A bounded page keeps the fast default and makes the omitted data recoverable. The archive rides in the same `profile=full` record, so a page costs one call and nothing extra beyond it. |
+| 2026-08-06 | The archive selector is `archive.list`, not a second `sections` | `sections` on the same tool already names parts of the record. Reusing the word for the curated-list selector would put two different selection axes behind one term, which a model reading only the schema cannot separate. `list` names the curated list, its values are the domain field names (`keyContent`, not `key_content`) so they match the fields the active half lands on, and its pagination knobs live inside the object rather than as orphan top-level fields that do nothing without it. |
+| 2026-08-06 | `sections` and `archive` are mutually exclusive; an archive call never outlines | Combining them has no meaning — an archive page is not a part of the record, and projecting a record that is not being returned selects nothing — so both together is a `selector_conflict` rather than a silent win for one. The over-budget case resolves structurally: archive mode never takes the profile fetch, so the only path that can outline is never reached, whatever the page weighs — and a page of link titles stays well inside the budget anyway. Both rules are stated in the input descriptions so a caller does not have to experiment to find them. |
+| 2026-08-06 | Outline-on-overflow extended to `reliefweb_get_country`, completing the five detail tools | It was the one profile-shaped detail tool left on the old whole-or-nothing path, and a major crisis profile — the same SYR-class record the archive work targets — is exactly what overflows. Leaving four of five on the mechanism would make the same overflow behave differently by record type, which is the drift the shared module exists to prevent. |
 | 2026-08-06 | Empty page with `totalCount > 0` gets its own notice naming the last reachable offset | Keying the notice on `items.length === 0` alone described a correct 1,775-match query as matching nothing and advised dropping the filters. The last-page offset is page-aligned (`floor((totalCount - 1) / limit) * limit`) so the returned value is one an unchanged `limit` can actually page to. `list_countries` carried the same defect behind a static string that mentioned offsets as boilerplate without ever comparing `totalCount` to `offset`, so it takes the same branch. |

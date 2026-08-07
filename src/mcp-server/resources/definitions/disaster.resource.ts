@@ -13,7 +13,8 @@ export const disasterResource = resource('reliefweb://disasters/{id}', {
   title: 'ReliefWeb Disaster',
   description:
     'Disaster record by ReliefWeb numeric ID — type, status, affected countries, GLIDE number, description, and curated content links. ' +
-    'Equivalent to calling reliefweb_get_disaster.',
+    'Always returns the whole record, however large: a resource read has no way to name sections, ' +
+    'so reliefweb_get_disaster is the path for an oversized disaster — it answers with a section outline and takes a sections selector.',
   mimeType: 'application/json',
   params: z.object({
     id: z

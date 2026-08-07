@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-08-07 03:13:03
+Generated on: 2026-08-07 04:59:07
 
 ```text
 reliefweb-mcp-server/
@@ -22,6 +22,7 @@ reliefweb-mcp-server/
 │   └── settings.json
 ├── changelog/
 │   ├── 0.1.x/
+│   ├── 0.2.x/
 │   └── template.md
 ├── docs/
 │   ├── design.md
@@ -145,14 +146,18 @@ reliefweb-mcp-server/
 │   │       ├── definitions/
 │   │       │   ├── get-country.tool.ts
 │   │       │   ├── get-disaster.tool.ts
+│   │       │   ├── get-job.tool.ts
 │   │       │   ├── get-report.tool.ts
+│   │       │   ├── get-training.tool.ts
 │   │       │   ├── list-countries.tool.ts
 │   │       │   ├── list-sources.tool.ts
 │   │       │   ├── search-disasters.tool.ts
 │   │       │   ├── search-jobs.tool.ts
 │   │       │   ├── search-reports.tool.ts
 │   │       │   └── search-training.tool.ts
-│   │       └── pagination.ts
+│   │       ├── document-sections.ts
+│   │       ├── pagination.ts
+│   │       └── profile-archive.ts
 │   ├── services/
 │   │   └── reliefweb/
 │   │       ├── date-utils.ts
@@ -176,7 +181,9 @@ reliefweb-mcp-server/
 │   └── tools/
 │       ├── get-country.tool.test.ts
 │       ├── get-disaster.tool.test.ts
+│       ├── get-job.tool.test.ts
 │       ├── get-report.tool.test.ts
+│       ├── get-training.tool.test.ts
 │       ├── list-countries.tool.test.ts
 │       ├── list-sources.tool.test.ts
 │       ├── pagination.test.ts

@@ -13,12 +13,17 @@ import { withRetry } from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig } from '@/config/server-config.js';
 import type {
   ContentType,
+  CountryArchive,
   CountryDetail,
   CountrySummary,
+  DisasterArchive,
   DisasterDetail,
   DisasterSummary,
   FilterCondition,
+  JobDetail,
   JobSummary,
+  ProfileArchiveEntry,
+  ProfileArchiveList,
   RawApiResponse,
   RawCountryFields,
   RawDisasterFields,
@@ -31,6 +36,7 @@ import type {
   ReportDetail,
   ReportSummary,
   SourceSummary,
+  TrainingDetail,
   TrainingSummary,
 } from './types.js';
 import { upstreamHttpError } from './upstream-errors.js';
@@ -197,6 +203,25 @@ export class ReliefWebService {
     );
   }
 
+  /**
+   * Fetches one record by ID through the search endpoint instead of `GET /{type}/{id}`.
+   * The item endpoint answers 404 for an expired job or a concluded training — exactly the
+   * records `include_archived` makes searchable — while an id-filtered search under
+   * `preset: 'analysis'` reaches the current and the archived halves alike.
+   */
+  private async getByIdQuery<T>(
+    contentType: ContentType,
+    id: number,
+    ctx: Context,
+  ): Promise<RawRecord<T> | null> {
+    const result = await this.post<T>(
+      contentType,
+      { filter: { field: 'id', value: id }, profile: 'full', preset: 'analysis', limit: 1 },
+      ctx,
+    );
+    return result.data?.[0] ?? null;
+  }
+
   // ─── Filter builder helpers ──────────────────────────────────────────────────
 
   private buildAndFilter(conditions: FilterCondition[]): FilterCondition | undefined {
@@ -359,21 +384,61 @@ export class ReliefWebService {
     return normalizeDisasterDetail(record.fields, record.id);
   }
 
+  /** The archived half of one curated profile list on a disaster. See `getCountryArchive`. */
+  async getDisasterArchive(
+    id: number,
+    list: ProfileArchiveList,
+    ctx: Context,
+  ): Promise<DisasterArchive | null> {
+    ctx.log.debug('getDisasterArchive', { id, list });
+    const record = await this.get<RawDisasterFields>('disasters', id, 'full', ctx);
+    if (!record) return null;
+    return {
+      ...normalizeDisasterSummary(record.fields, record.id),
+      entries: profileArchiveEntries(record.fields.profile, list),
+    };
+  }
+
   // ─── Countries ───────────────────────────────────────────────────────────────
 
-  async getCountry(iso3: string, ctx: Context): Promise<CountryDetail | null> {
-    ctx.log.debug('getCountry', { iso3 });
-
+  private async fetchCountryRecord(
+    iso3: string,
+    ctx: Context,
+  ): Promise<RawRecord<RawCountryFields> | null> {
     const query: ReliefWebQuery = {
       filter: { field: 'iso3', value: iso3.toUpperCase() },
       profile: 'full',
       limit: 1,
     };
-
     const result = await this.post<RawCountryFields>('countries', query, ctx);
-    const record = result.data?.[0];
+    return result.data?.[0] ?? null;
+  }
+
+  async getCountry(iso3: string, ctx: Context): Promise<CountryDetail | null> {
+    ctx.log.debug('getCountry', { iso3 });
+    const record = await this.fetchCountryRecord(iso3, ctx);
     if (!record) return null;
     return normalizeCountryDetail(record.fields, record.id);
+  }
+
+  /**
+   * The archived half of one curated profile list, whole. `getCountry` drops it to keep the
+   * default profile bounded; this returns every archived entry so the caller can page it.
+   * Same upstream call as `getCountry` — the archive travels in the `profile=full` record
+   * already, so reaching it costs nothing extra against the daily quota.
+   */
+  async getCountryArchive(
+    iso3: string,
+    list: ProfileArchiveList,
+    ctx: Context,
+  ): Promise<CountryArchive | null> {
+    ctx.log.debug('getCountryArchive', { iso3, list });
+    const record = await this.fetchCountryRecord(iso3, ctx);
+    if (!record) return null;
+    return {
+      ...normalizeCountrySummary(record.fields, record.id),
+      entries: profileArchiveEntries(record.fields.profile, list),
+    };
   }
 
   async listCountries(
@@ -452,6 +517,13 @@ export class ReliefWebService {
     };
   }
 
+  async getJob(id: number, ctx: Context): Promise<JobDetail | null> {
+    ctx.log.debug('getJob', { id });
+    const record = await this.getByIdQuery<RawJobFields>('jobs', id, ctx);
+    if (!record) return null;
+    return normalizeJobDetail(record.fields, record.id);
+  }
+
   // ─── Training ────────────────────────────────────────────────────────────────
 
   async searchTraining(
@@ -502,6 +574,13 @@ export class ReliefWebService {
       items: (result.data ?? []).map((r) => normalizeTrainingSummary(r.fields, r.id)),
       totalCount: result.totalCount,
     };
+  }
+
+  async getTraining(id: number, ctx: Context): Promise<TrainingDetail | null> {
+    ctx.log.debug('getTraining', { id });
+    const record = await this.getByIdQuery<RawTrainingFields>('training', id, ctx);
+    if (!record) return null;
+    return normalizeTrainingDetail(record.fields, record.id);
   }
 
   // ─── Sources ─────────────────────────────────────────────────────────────────
@@ -573,6 +652,30 @@ function normalizeDatedLinks(
     return [{ title: item.title, url: item.url, ...(item.date ? { date: item.date } : {}) }];
   });
   return out?.length ? out : undefined;
+}
+
+/** Domain list name → the raw API key that holds it. */
+const ARCHIVE_RAW_KEY = {
+  keyContent: 'key_content',
+  appealsResponsePlans: 'appeals_response_plans',
+  usefulLinks: 'useful_links',
+} as const satisfies Record<ProfileArchiveList, keyof NonNullable<RawCountryFields['profile']>>;
+
+/**
+ * Every archived entry of one curated list, in ReliefWeb's own archive order. Entries
+ * missing a title or a URL are dropped, same rule the active half goes through — an entry
+ * that cannot be linked is not a retrievable entry. Country and disaster profiles carry the
+ * identical sub-object shape, so one function serves both.
+ */
+function profileArchiveEntries(
+  profile: RawCountryFields['profile'] | RawDisasterFields['profile'],
+  list: ProfileArchiveList,
+): ProfileArchiveEntry[] {
+  const raw: Array<LinkWithDate> = profile?.[ARCHIVE_RAW_KEY[list]]?.archive ?? [];
+  return raw.flatMap((item) => {
+    if (!item.title || !item.url) return [];
+    return [{ title: item.title, url: item.url, ...(item.date ? { date: item.date } : {}) }];
+  });
 }
 
 function normalizeReportSummary(f: RawReportFields, id: number): ReportSummary {
@@ -668,6 +771,16 @@ function normalizeJobSummary(f: RawJobFields, id: number): JobSummary {
   return r;
 }
 
+function normalizeJobDetail(f: RawJobFields, id: number): JobDetail {
+  const r: JobDetail = { ...normalizeJobSummary(f, id) };
+  if (f.status) r.status = f.status;
+  if (f.date?.changed) r.dateChanged = f.date.changed;
+  if (f.body) r.body = f.body;
+  if (f.how_to_apply) r.howToApply = f.how_to_apply;
+  if (f.url) r.url = f.url;
+  return r;
+}
+
 function normalizeTrainingSummary(f: RawTrainingFields, id: number): TrainingSummary {
   const r: TrainingSummary = { id: f.id ?? id, title: f.title ?? '(untitled)' };
   if (f.date?.start) r.dateStart = f.date.start;
@@ -682,6 +795,24 @@ function normalizeTrainingSummary(f: RawTrainingFields, id: number): TrainingSum
   if (f.career_categories?.length)
     r.careerCategories = f.career_categories.map((c) => c.name ?? '').filter(Boolean);
   if (f.url_alias) r.urlAlias = f.url_alias;
+  return r;
+}
+
+function normalizeTrainingDetail(f: RawTrainingFields, id: number): TrainingDetail {
+  const r: TrainingDetail = { ...normalizeTrainingSummary(f, id) };
+  if (f.status) r.status = f.status;
+  if (f.date?.created) r.dateCreated = f.date.created;
+  if (f.city?.length) r.cities = f.city.map((c) => c.name ?? '').filter(Boolean);
+  if (f.type?.length) r.types = f.type.map((t) => t.name ?? '').filter(Boolean);
+  if (f.training_language?.length) {
+    r.trainingLanguages = f.training_language.map((l) => l.code ?? '').filter(Boolean);
+  }
+  if (f.body) r.body = f.body;
+  if (f.how_to_register) r.howToRegister = f.how_to_register;
+  if (f.event_url) r.eventUrl = f.event_url;
+  if (f.cost) r.cost = f.cost;
+  if (f.fee_information) r.feeInformation = f.fee_information;
+  if (f.url) r.url = f.url;
   return r;
 }
 

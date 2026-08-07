@@ -723,3 +723,359 @@ describe('ReliefWebService — upstream error classification', () => {
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce();
   });
 });
+
+// ─── Issue #14: job/training detail fetch ────────────────────────────────────
+
+describe('ReliefWebService.getJob / getTraining — archived-reachable detail fetch', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  /** The POST body and URL of the most recent fetch call. */
+  function lastCall(): { body: Record<string, unknown>; url: string } {
+    const call = vi.mocked(globalThis.fetch).mock.calls.at(-1);
+    const init = call?.[1] as RequestInit | undefined;
+    return {
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      url: String(call?.[0]),
+    };
+  }
+
+  function pageWith(fields: Record<string, unknown>, id: number) {
+    return {
+      count: 1,
+      data: [{ id, type: 'jobs', fields }],
+      status: 200,
+      time: 0.01,
+      totalCount: 1,
+      self: 'https://api.reliefweb.int/v2/jobs',
+    };
+  }
+
+  const emptyPage = {
+    count: 0,
+    data: [],
+    status: 200,
+    time: 0.01,
+    totalCount: 0,
+    self: 'https://api.reliefweb.int/v2/jobs',
+  };
+
+  it('getJob queries the search endpoint under preset=analysis so expired postings resolve', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse(pageWith({ id: 4221508 }, 4221508)),
+    );
+
+    await makeService().getJob(4221508, createMockContext());
+
+    const { body, url } = lastCall();
+    expect(url).toContain('/v2/jobs?');
+    // Not the item endpoint — `GET /v2/jobs/{id}` answers 404 for an expired posting.
+    expect(url).not.toContain('/v2/jobs/4221508');
+    expect(body.filter).toEqual({ field: 'id', value: 4221508 });
+    expect(body.preset).toBe('analysis');
+    expect(body.profile).toBe('full');
+    expect(body.limit).toBe(1);
+  });
+
+  it('getJob normalizes body, how_to_apply, status, and both URLs', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse(
+        pageWith(
+          {
+            id: 4221508,
+            title: 'Program Manager',
+            status: 'expired',
+            body: '<p>Duties.</p>',
+            how_to_apply: '<p>Send a CV.</p>',
+            date: {
+              created: '2026-07-15T10:09:12+00:00',
+              closing: '2026-08-03T00:00:00+00:00',
+              changed: '2026-08-04T00:04:02+00:00',
+            },
+            source: [{ shortname: 'Qatar Charity', name: 'Qatar Charity' }],
+            country: [{ name: 'Kenya', iso3: 'ken' }],
+            career_categories: [{ name: 'Program/Project Management' }],
+            experience: [{ name: '10+ years' }],
+            type: [{ name: 'Job' }],
+            url: 'https://reliefweb.int/node/4221508',
+            url_alias: 'https://reliefweb.int/job/4221508/program-manager',
+          },
+          4221508,
+        ),
+      ),
+    );
+
+    const job = await makeService().getJob(4221508, createMockContext());
+
+    expect(job).toMatchObject({
+      id: 4221508,
+      title: 'Program Manager',
+      status: 'expired',
+      body: '<p>Duties.</p>',
+      howToApply: '<p>Send a CV.</p>',
+      dateChanged: '2026-08-04T00:04:02+00:00',
+      dateClosing: '2026-08-03T00:00:00+00:00',
+      careerCategories: ['Program/Project Management'],
+      experienceLevels: ['10+ years'],
+      url: 'https://reliefweb.int/node/4221508',
+      urlAlias: 'https://reliefweb.int/job/4221508/program-manager',
+    });
+  });
+
+  it('getTraining normalizes registration, event link, cost, fee, cities, and training languages', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse(
+        pageWith(
+          {
+            id: 4188583,
+            title: 'Security Risk Management',
+            status: 'expired',
+            body: '<p>Course content.</p>',
+            how_to_register: '<p>Email us.</p>',
+            event_url: 'https://www.separinternational.com/training',
+            cost: 'fee-based',
+            fee_information: '$1,400.00 plus VAT',
+            city: [{ name: 'Deventer' }],
+            type: [{ name: 'Training/Workshop' }],
+            format: [{ name: 'on-site' }],
+            language: [{ code: 'en', name: 'English' }],
+            training_language: [{ code: 'en', name: 'English' }],
+            date: {
+              start: '2026-07-20T00:00:00+00:00',
+              end: '2026-07-23T00:00:00+00:00',
+              registration: '2026-07-17T00:00:00+00:00',
+              created: '2025-11-27T00:59:46+00:00',
+            },
+            url: 'https://reliefweb.int/node/4188583',
+            url_alias: 'https://reliefweb.int/training/4188583/srm',
+          },
+          4188583,
+        ),
+      ),
+    );
+
+    const training = await makeService().getTraining(4188583, createMockContext());
+
+    expect(training).toMatchObject({
+      id: 4188583,
+      status: 'expired',
+      body: '<p>Course content.</p>',
+      howToRegister: '<p>Email us.</p>',
+      eventUrl: 'https://www.separinternational.com/training',
+      cost: 'fee-based',
+      feeInformation: '$1,400.00 plus VAT',
+      cities: ['Deventer'],
+      types: ['Training/Workshop'],
+      formats: ['on-site'],
+      languages: ['en'],
+      trainingLanguages: ['en'],
+      dateCreated: '2025-11-27T00:59:46+00:00',
+      url: 'https://reliefweb.int/node/4188583',
+    });
+
+    const { body, url } = lastCall();
+    expect(url).toContain('/v2/training?');
+    expect(body.preset).toBe('analysis');
+  });
+
+  it('returns null when the ID matches nothing, so the tool can raise not_found', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    const ctx = createMockContext();
+    await expect(makeService().getJob(99999999, ctx)).resolves.toBeNull();
+    await expect(makeService().getTraining(99999999, ctx)).resolves.toBeNull();
+  });
+
+  it('leaves a sparse record sparse rather than inventing empty sections', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse(pageWith({ id: 7, title: 'Bare Posting' }, 7)),
+    );
+
+    const job = await makeService().getJob(7, createMockContext());
+
+    expect(job).toEqual({ id: 7, title: 'Bare Posting' });
+  });
+});
+
+// ─── Issue #15: archived curated-profile entries are reachable ────────────────
+
+describe('ReliefWebService.getCountryArchive / getDisasterArchive — archived halves', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  /** A profile whose archive halves are deeper than its active ones, as SYR's really is. */
+  const profile = {
+    overview: 'Syria crisis overview.',
+    key_content: {
+      title: 'Key Content',
+      active: [{ url: 'https://reliefweb.int/key-active', title: 'Active Key' }],
+      archive: [
+        { url: 'https://reliefweb.int/key-a1', title: 'Archived Key 1' },
+        { url: 'https://reliefweb.int/key-a2', title: 'Archived Key 2' },
+        { url: 'https://reliefweb.int/key-a3', title: 'Archived Key 3' },
+      ],
+    },
+    appeals_response_plans: {
+      title: 'Appeals & Response Plans',
+      active: [{ url: 'https://reliefweb.int/hrp', title: 'HRP 2024', date: '2024-01-01' }],
+      archive: [
+        { url: 'https://reliefweb.int/hrp-2019', title: 'HRP 2019', date: '2019-01-01' },
+        { url: 'https://reliefweb.int/hrp-2018', title: 'HRP 2018', date: '2018-01-01' },
+      ],
+    },
+    useful_links: {
+      title: 'Useful Links',
+      active: [{ url: 'https://ocha.org/syria', title: 'OCHA Syria' }],
+    },
+  };
+
+  function countryPage() {
+    return {
+      count: 1,
+      data: [
+        {
+          id: 10001,
+          type: 'countries',
+          fields: {
+            id: 10001,
+            name: 'Syrian Arab Republic',
+            iso3: 'SYR',
+            status: 'current',
+            url_alias: 'https://reliefweb.int/country/syr',
+            profile,
+          },
+        },
+      ],
+      status: 200,
+      time: 0.05,
+      totalCount: 1,
+      self: 'https://api.reliefweb.int/v2/countries',
+    };
+  }
+
+  it('returns the archived half of the named list, not the active half', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(countryPage()));
+
+    const result = await makeService().getCountryArchive('SYR', 'keyContent', createMockContext());
+
+    expect(result?.entries.map((e) => e.title)).toEqual([
+      'Archived Key 1',
+      'Archived Key 2',
+      'Archived Key 3',
+    ]);
+    expect(result).toMatchObject({ id: 10001, iso3: 'SYR', name: 'Syrian Arab Republic' });
+  });
+
+  it('carries the publication date on archived appeals and response plans', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(countryPage()));
+
+    const result = await makeService().getCountryArchive(
+      'SYR',
+      'appealsResponsePlans',
+      createMockContext(),
+    );
+
+    expect(result?.entries).toEqual([
+      { title: 'HRP 2019', url: 'https://reliefweb.int/hrp-2019', date: '2019-01-01' },
+      { title: 'HRP 2018', url: 'https://reliefweb.int/hrp-2018', date: '2018-01-01' },
+    ]);
+  });
+
+  it('returns an empty list — not null — for a list upstream gives no archive for', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(countryPage()));
+
+    const result = await makeService().getCountryArchive('SYR', 'usefulLinks', createMockContext());
+
+    expect(result?.entries).toEqual([]);
+    expect(result?.id).toBe(10001);
+  });
+
+  it('drops archived entries that carry no linkable URL or title', async () => {
+    const page = countryPage();
+    page.data[0]!.fields.profile = {
+      ...profile,
+      key_content: {
+        title: 'Key Content',
+        active: [],
+        archive: [
+          { url: 'https://reliefweb.int/ok', title: 'Linkable' },
+          { url: 'https://reliefweb.int/no-title', title: '' },
+          { url: '', title: 'No URL' },
+        ],
+      },
+    };
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(page));
+
+    const result = await makeService().getCountryArchive('SYR', 'keyContent', createMockContext());
+
+    expect(result?.entries).toEqual([{ title: 'Linkable', url: 'https://reliefweb.int/ok' }]);
+  });
+
+  it('returns null for an unknown country so the tool can raise not_found', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse({
+        count: 0,
+        data: [],
+        status: 200,
+        time: 0.01,
+        totalCount: 0,
+        self: 'https://api.reliefweb.int/v2/countries',
+      }),
+    );
+
+    await expect(
+      makeService().getCountryArchive('ZZZ', 'keyContent', createMockContext()),
+    ).resolves.toBeNull();
+  });
+
+  it('reads a disaster archive off the identically-shaped disaster profile', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse({
+        data: [
+          {
+            id: 51470,
+            type: 'disasters',
+            fields: {
+              id: 51470,
+              name: 'Major Disaster',
+              status: 'ongoing',
+              url_alias: 'https://reliefweb.int/disaster/major',
+              profile,
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await makeService().getDisasterArchive(51470, 'keyContent', createMockContext());
+
+    expect(result).toMatchObject({ id: 51470, name: 'Major Disaster' });
+    expect(result?.entries).toHaveLength(3);
+    expect(result?.entries[0]).toEqual({
+      title: 'Archived Key 1',
+      url: 'https://reliefweb.int/key-a1',
+    });
+  });
+
+  it('returns null for an unknown disaster so the tool can raise not_found', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse({ data: [] }));
+
+    await expect(
+      makeService().getDisasterArchive(9999999, 'keyContent', createMockContext()),
+    ).resolves.toBeNull();
+  });
+});

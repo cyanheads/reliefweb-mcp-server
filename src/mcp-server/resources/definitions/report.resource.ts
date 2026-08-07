@@ -13,7 +13,8 @@ export const reportResource = resource('reliefweb://reports/{id}', {
   title: 'ReliefWeb Report',
   description:
     'Full report record by ReliefWeb numeric ID — metadata, body text, and file URLs. ' +
-    'Equivalent to calling reliefweb_get_report.',
+    'Always returns the whole record, however large: a resource read has no way to name sections, ' +
+    'so reliefweb_get_report is the path for an oversized report — it answers with a section outline and takes a sections selector.',
   mimeType: 'application/json',
   params: z.object({
     id: z
