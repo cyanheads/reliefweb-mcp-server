@@ -5,7 +5,13 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
+import {
+  isRejectedQueryError,
+  rejectedQueryMessage,
+  upstreamErrorMessage,
+} from '@/services/reliefweb/upstream-errors.js';
 
 export const reliefwebListSources = tool('reliefweb_list_sources', {
   title: 'List ReliefWeb Sources',
@@ -78,16 +84,23 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       .string()
       .optional()
       .describe(
-        'Recovery hint when results are empty — echoes the active filters and suggests how to broaden. Absent on successful result pages.',
+        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
       ),
   },
   errors: [
     {
+      reason: 'invalid_query',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'ReliefWeb rejected the request as malformed rather than failing to serve it.',
+      recovery:
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically.',
+    },
+    {
       reason: 'upstream_error',
       code: JsonRpcErrorCode.ServiceUnavailable,
-      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      when: 'The ReliefWeb API was unreachable, timed out, or returned a server error.',
       recovery:
-        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted before retrying.',
+        'Wait a moment and retry. If the message names a configuration or quota problem — an unapproved appname, or the 1,000 calls/day limit — that must be resolved before any retry can succeed.',
     },
   ],
 
@@ -109,15 +122,34 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
         ctx,
       )
       .catch((err: unknown) => {
-        throw ctx.fail('upstream_error', 'ReliefWeb API error while listing sources.', {
-          cause: err,
-          ...ctx.recoveryFor('upstream_error'),
-        });
+        if (isRejectedQueryError(err)) {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('sources', err), {
+            cause: err,
+            ...ctx.recoveryFor('invalid_query'),
+          });
+        }
+        throw ctx.fail(
+          'upstream_error',
+          upstreamErrorMessage('ReliefWeb API error while listing sources.', err),
+          {
+            cause: err,
+            ...ctx.recoveryFor('upstream_error'),
+          },
+        );
       });
 
     ctx.enrich.total(result.totalCount);
 
-    if (result.items.length === 0) {
+    if (result.items.length === 0 && result.totalCount > 0) {
+      ctx.enrich.notice(
+        pagedPastEndNotice({
+          subject: 'sources',
+          offset: input.offset,
+          totalCount: result.totalCount,
+          limit: input.limit,
+        }),
+      );
+    } else if (result.items.length === 0) {
       const filters: string[] = [];
       const suggestions: string[] = [];
       if (input.text) {

@@ -5,7 +5,7 @@
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchTraining } from '@/mcp-server/tools/definitions/search-training.tool.js';
 
 const mockSearchTraining = vi.fn();
@@ -120,9 +120,9 @@ describe('reliefwebSearchTraining', () => {
     expect(result.appliedFilters.sort).toBe('date.start:desc');
   });
 
-  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+  it('throws ctx.fail("upstream_error") when ReliefWeb is unavailable', async () => {
     mockSearchTraining.mockRejectedValue(
-      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400'),
+      new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503.'),
     );
 
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
@@ -133,6 +133,25 @@ describe('reliefwebSearchTraining', () => {
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
     expect((err as McpError).data).toHaveProperty('recovery.hint');
+  });
+
+  it('throws ctx.fail("invalid_query") with the ReliefWeb message when the query is rejected', async () => {
+    mockSearchTraining.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400.', {
+        upstreamMessage: "Unrecognized sort field 'bogus.field'.",
+      }),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
+    const input = reliefwebSearchTraining.input.parse({ sort: 'bogus.field:desc' });
+
+    const err = (await reliefwebSearchTraining
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
+    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
   });
 
   it('passes date range filters correctly', async () => {
@@ -202,5 +221,146 @@ describe('reliefwebSearchTraining', () => {
     expect(text).toContain('online');
     expect(text).toContain('2024-06-01');
     expect(text).toContain('2024-06-30');
+  });
+});
+
+// ─── Issue #17: unbounded searches default to upcoming starts ────────────────
+
+describe('reliefwebSearchTraining — default upcoming-start window', () => {
+  const NOW = new Date('2026-08-06T12:34:56.789Z');
+  const NOW_BOUND = '2026-08-06T12:34:56+00:00';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('applies a current-timestamp lower bound when neither date bound is supplied', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ limit: 5 });
+    await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(mockSearchTraining).toHaveBeenCalledWith(
+      expect.objectContaining({ dateStartFrom: NOW_BOUND }),
+      ctx,
+    );
+  });
+
+  it('echoes the injected bound in appliedFilters and in content[]', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({});
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(result.appliedFilters.dateStartFrom).toBe(NOW_BOUND);
+    const text = (reliefwebSearchTraining.format!(result)[0] as { text: string }).text;
+    expect(text).toContain(`dateStartFrom=${NOW_BOUND}`);
+  });
+
+  it('injects no lower bound when the caller supplied only an upper bound', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({
+      date_start_to: '2025-12-31T23:59:59+00:00',
+    });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(mockSearchTraining.mock.calls[0][0]).not.toHaveProperty('dateStartFrom');
+    expect(result.appliedFilters).not.toHaveProperty('dateStartFrom');
+  });
+
+  it('leaves an explicit lower bound alone', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ date_start_from: '2020-01-01' });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(result.appliedFilters.dateStartFrom).toBe('2020-01-01T00:00:00+00:00');
+  });
+});
+
+// ─── Issue #21: bare YYYY-MM-DD dates ────────────────────────────────────────
+
+describe('reliefwebSearchTraining — date normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('resolves a bare date window to start-of-day and end-of-day', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({
+      date_start_from: '2026-09-01',
+      date_start_to: '2026-09-30',
+    });
+    const result = await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(mockSearchTraining).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dateStartFrom: '2026-09-01T00:00:00+00:00',
+        dateStartTo: '2026-09-30T23:59:59+00:00',
+      }),
+      ctx,
+    );
+    expect(result.appliedFilters).toMatchObject({
+      dateStartFrom: '2026-09-01T00:00:00+00:00',
+      dateStartTo: '2026-09-30T23:59:59+00:00',
+    });
+  });
+
+  it('rejects an unparseable date at the schema, naming the accepted formats', () => {
+    expect(() => reliefwebSearchTraining.input.parse({ date_start_from: 'next month' })).toThrow(
+      /calendar date/i,
+    );
+  });
+
+  it('accepts blank date bounds from form-based clients and still defaults to upcoming', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-06T12:34:56.789Z'));
+    try {
+      const ctx = createMockContext();
+      const input = reliefwebSearchTraining.input.parse({ date_start_from: '', date_start_to: '' });
+      const result = await reliefwebSearchTraining.handler(input, ctx);
+
+      expect(result.appliedFilters.dateStartFrom).toBe('2026-08-06T12:34:56+00:00');
+      expect(result.appliedFilters).not.toHaveProperty('dateStartTo');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ─── Issue #22: paged past the end of a result set ───────────────────────────
+
+describe('reliefwebSearchTraining — offset past the end of the result set', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('names the offset and the last reachable page instead of claiming no matches', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 215 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ offset: 99999, limit: 10 });
+    await reliefwebSearchTraining.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('99999');
+    expect(notice).toContain('215');
+    expect(notice).toContain('offset 210');
+    expect(notice).not.toContain('No training matched');
+  });
+
+  it('keeps the broaden-your-search notice when nothing actually matched', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchTraining.input.parse({ offset: 99999 });
+    await reliefwebSearchTraining.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toContain('No training matched');
   });
 });

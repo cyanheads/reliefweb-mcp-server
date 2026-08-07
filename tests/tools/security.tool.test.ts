@@ -3,7 +3,7 @@
  * @module tests/tools/security.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetCountry } from '@/mcp-server/tools/definitions/get-country.tool.js';
 import { reliefwebGetDisaster } from '@/mcp-server/tools/definitions/get-disaster.tool.js';
@@ -63,65 +63,83 @@ describe('security: input handling across search tools', () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
   });
 
-  it('search_reports: passes injection strings to service without modification (service is trusted)', async () => {
-    // The tool layer does not filter text content — the service layer handles API-level safety.
-    // We verify the tool does NOT crash and does NOT leak secrets back to the caller.
-    for (const str of INJECTION_STRINGS) {
-      const ctx = createMockContext();
-      const input = reliefwebSearchReports.input.parse({ text: str });
-      const result = await reliefwebSearchReports.handler(input, ctx);
-      expect(result.items).toBeDefined();
-    }
-  });
+  /**
+   * The tool layer does not filter free-text content — ReliefWeb receives the query as a
+   * JSON string value, so escaping it here would corrupt legitimate searches. What must
+   * hold is that the string arrives byte-identical and is echoed back byte-identical:
+   * a tool that silently rewrote it would answer a different question than it was asked.
+   */
+  const TEXT_TOOLS = [
+    ['search_reports', reliefwebSearchReports, mockSearchReports],
+    ['search_disasters', reliefwebSearchDisasters, mockSearchDisasters],
+    ['search_jobs', reliefwebSearchJobs, mockSearchJobs],
+    ['search_training', reliefwebSearchTraining, mockSearchTraining],
+    ['list_sources', reliefwebListSources, mockListSources],
+  ] as const;
 
-  it('search_disasters: passes injection strings through without crashing', async () => {
-    for (const str of INJECTION_STRINGS) {
-      const ctx = createMockContext();
-      const input = reliefwebSearchDisasters.input.parse({ text: str });
-      const result = await reliefwebSearchDisasters.handler(input, ctx);
-      expect(result.items).toBeDefined();
-    }
-  });
+  it.each(TEXT_TOOLS)(
+    '%s: forwards every injection string to the service byte-identical',
+    async (_l, def, mock) => {
+      for (const str of INJECTION_STRINGS) {
+        mock.mockClear();
+        const ctx = createMockContext();
+        const input = def.input.parse({ text: str });
+        await def.handler(input, ctx);
 
-  it('search_jobs: passes injection strings through without crashing', async () => {
-    for (const str of INJECTION_STRINGS) {
-      const ctx = createMockContext();
-      const input = reliefwebSearchJobs.input.parse({ text: str });
-      const result = await reliefwebSearchJobs.handler(input, ctx);
-      expect(result.items).toBeDefined();
-    }
-  });
+        expect(mock).toHaveBeenCalledWith(expect.objectContaining({ text: str }), ctx);
+      }
+    },
+  );
 
-  it('search_training: passes injection strings through without crashing', async () => {
-    for (const str of INJECTION_STRINGS) {
-      const ctx = createMockContext();
-      const input = reliefwebSearchTraining.input.parse({ text: str });
-      const result = await reliefwebSearchTraining.handler(input, ctx);
-      expect(result.items).toBeDefined();
-    }
-  });
+  /** `list_sources` has no `appliedFilters` output field — its echo is the notice, covered below. */
+  it.each(TEXT_TOOLS.filter(([label]) => label !== 'list_sources'))(
+    '%s: echoes every injection string back in appliedFilters byte-identical',
+    async (_l, def) => {
+      for (const str of INJECTION_STRINGS) {
+        const ctx = createMockContext();
+        const input = def.input.parse({ text: str });
+        const result = await def.handler(input, ctx);
 
-  it('list_sources: passes injection strings through without crashing', async () => {
-    for (const str of INJECTION_STRINGS) {
-      const ctx = createMockContext();
-      const input = reliefwebListSources.input.parse({ text: str });
-      const result = await reliefwebListSources.handler(input, ctx);
-      expect(result.items).toBeDefined();
-    }
-  });
+        expect((result as { appliedFilters: { text?: string } }).appliedFilters.text).toBe(str);
+      }
+    },
+  );
 
-  it('search_reports: handles oversized text input without crashing', async () => {
+  it.each(TEXT_TOOLS)('%s: forwards an oversized text input whole', async (_l, def, mock) => {
     const ctx = createMockContext();
-    const input = reliefwebSearchReports.input.parse({ text: OVERSIZED_INPUT });
-    const result = await reliefwebSearchReports.handler(input, ctx);
-    expect(result.items).toBeDefined();
+    const input = def.input.parse({ text: OVERSIZED_INPUT });
+    await def.handler(input, ctx);
+
+    const forwarded = (mock.mock.calls[0][0] as { text: string }).text;
+    expect(forwarded).toHaveLength(OVERSIZED_INPUT.length);
+    expect(forwarded).toBe(OVERSIZED_INPUT);
+  });
+});
+
+describe('security: date parameters reject injection payloads at the schema', () => {
+  // Date fields carry a format pattern, so an injection payload never reaches the service
+  // or the echoed appliedFilters — it dies as a ZodError before the handler runs.
+  const DATE_FIELDS = [
+    ['search_reports.date_from', reliefwebSearchReports, 'date_from'],
+    ['search_reports.date_to', reliefwebSearchReports, 'date_to'],
+    ['search_disasters.date_from', reliefwebSearchDisasters, 'date_from'],
+    ['search_disasters.date_to', reliefwebSearchDisasters, 'date_to'],
+    ['search_training.date_start_from', reliefwebSearchTraining, 'date_start_from'],
+    ['search_training.date_start_to', reliefwebSearchTraining, 'date_start_to'],
+  ] as const;
+
+  it.each(DATE_FIELDS)('%s rejects every injection string as a ZodError', (_label, def, field) => {
+    for (const str of INJECTION_STRINGS) {
+      expect(() => def.input.parse({ [field]: str })).toThrow();
+    }
   });
 
-  it('list_sources: handles oversized text input without crashing', async () => {
-    const ctx = createMockContext();
-    const input = reliefwebListSources.input.parse({ text: OVERSIZED_INPUT });
-    const result = await reliefwebListSources.handler(input, ctx);
-    expect(result.items).toBeDefined();
+  it.each(DATE_FIELDS)('%s rejects an oversized value', (_label, def, field) => {
+    expect(() => def.input.parse({ [field]: OVERSIZED_INPUT })).toThrow();
+  });
+
+  it.each(DATE_FIELDS)('%s still accepts a bare calendar date', (_label, def, field) => {
+    expect(() => def.input.parse({ [field]: '2026-07-01' })).not.toThrow();
   });
 });
 
@@ -183,16 +201,34 @@ describe('security: tool outputs do not leak env values', () => {
     vi.clearAllMocks();
   });
 
-  it('search_reports: empty-result notice does not contain env-style tokens', async () => {
+  it('search_reports: empty-result notice echoes the query without env-style tokens', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext();
     const input = reliefwebSearchReports.input.parse({ text: 'test' });
     await reliefwebSearchReports.handler(input, ctx);
 
-    // The enrichment notice should not contain anything that looks like a key/token
-    // (Verified by checking the notice string content when available)
-    expect(mockSearchReports).toHaveBeenCalledOnce();
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('text="test"');
+    expect(notice).not.toMatch(/api[_-]?key/i);
+    expect(notice).not.toMatch(/process\.env/i);
+    expect(notice).not.toMatch(/\bsecret\b/i);
+  });
+
+  it('search_reports: offset-past-the-end notice carries only counts, no caller strings', async () => {
+    mockSearchReports.mockResolvedValue({ items: [], totalCount: 1775 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchReports.input.parse({
+      text: '<script>alert(document.cookie)</script>',
+      offset: 99999,
+      limit: 2,
+    });
+    await reliefwebSearchReports.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('1775');
+    expect(notice).not.toContain('<script>');
   });
 
   it('get_country: not_found error message does not reference internal env vars', async () => {

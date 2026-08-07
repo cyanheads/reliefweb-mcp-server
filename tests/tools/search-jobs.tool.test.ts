@@ -186,3 +186,63 @@ describe('reliefwebSearchJobs', () => {
     expect(text).toContain('2024-04-01');
   });
 });
+
+// ─── Issue #20: rejected query vs service failure ────────────────────────────
+
+describe('reliefwebSearchJobs — upstream error contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('throws ctx.fail("invalid_query") with the ReliefWeb message when the query is rejected', async () => {
+    mockSearchJobs.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400.', {
+        upstreamMessage: "Unrecognized sort field 'bogus.field'.",
+      }),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
+    const input = reliefwebSearchJobs.input.parse({ sort: 'bogus.field:desc' });
+
+    const err = (await reliefwebSearchJobs
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
+    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+  });
+});
+
+// ─── Issue #22: paged past the end of a result set ───────────────────────────
+
+describe('reliefwebSearchJobs — offset past the end of the result set', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('names the offset and the last reachable page instead of claiming no matches', async () => {
+    mockSearchJobs.mockResolvedValue({ items: [], totalCount: 640 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ offset: 9000, limit: 20 });
+    await reliefwebSearchJobs.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('9000');
+    expect(notice).toContain('640');
+    expect(notice).toContain('offset 620');
+    expect(notice).not.toContain('No jobs matched');
+  });
+
+  it('keeps the broaden-your-search notice when nothing actually matched', async () => {
+    mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchJobs.input.parse({ offset: 9000 });
+    await reliefwebSearchJobs.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toContain('No jobs matched');
+  });
+});

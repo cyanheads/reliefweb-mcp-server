@@ -104,7 +104,7 @@ describe('reliefwebSearchDisasters', () => {
     expect(notice).toContain('date_to=2023-12-31T00:00:00+00:00');
   });
 
-  it('throws ctx.fail("upstream_error") when the service rejects', async () => {
+  it('throws ctx.fail("upstream_error") on a rate limit — retry advice still applies', async () => {
     mockSearchDisasters.mockRejectedValue(
       new McpError(JsonRpcErrorCode.RateLimited, 'ReliefWeb returned HTTP 429'),
     );
@@ -167,5 +167,103 @@ describe('reliefwebSearchDisasters', () => {
     expect(text).toContain('Earthquake');
     expect(text).toContain('2023-02-06');
     expect(text).toContain('Turkey');
+  });
+});
+
+// ─── Issue #20: rejected query vs service failure ────────────────────────────
+
+describe('reliefwebSearchDisasters — upstream error contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('throws ctx.fail("invalid_query") with the ReliefWeb message when the query is rejected', async () => {
+    mockSearchDisasters.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400.', {
+        upstreamMessage: "Unrecognized sort field 'bogus.field'.",
+      }),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
+    const input = reliefwebSearchDisasters.input.parse({ sort: 'bogus.field:desc' });
+
+    const err = (await reliefwebSearchDisasters
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
+    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+  });
+});
+
+// ─── Issue #21: bare YYYY-MM-DD dates ────────────────────────────────────────
+
+describe('reliefwebSearchDisasters — date normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it('resolves a bare date range to start-of-day and end-of-day on both surfaces', async () => {
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({
+      date_from: '2023-01-01',
+      date_to: '2023-12-31',
+    });
+    const result = await reliefwebSearchDisasters.handler(input, ctx);
+
+    expect(mockSearchDisasters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dateFrom: '2023-01-01T00:00:00+00:00',
+        dateTo: '2023-12-31T23:59:59+00:00',
+      }),
+      ctx,
+    );
+    expect(result.appliedFilters).toMatchObject({
+      dateFrom: '2023-01-01T00:00:00+00:00',
+      dateTo: '2023-12-31T23:59:59+00:00',
+    });
+    const text = (reliefwebSearchDisasters.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('dateTo=2023-12-31T23:59:59+00:00');
+  });
+
+  it('rejects an unparseable date at the schema, naming the accepted formats', () => {
+    expect(() => reliefwebSearchDisasters.input.parse({ date_from: 'yesterday' })).toThrow(
+      /calendar date/i,
+    );
+  });
+});
+
+// ─── Issue #22: paged past the end of a result set ───────────────────────────
+
+describe('reliefwebSearchDisasters — offset past the end of the result set', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('names the offset and the last reachable page instead of claiming no matches', async () => {
+    mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 137 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({ offset: 5000, limit: 25 });
+    await reliefwebSearchDisasters.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('5000');
+    expect(notice).toContain('137');
+    expect(notice).toContain('offset 125');
+    expect(notice).not.toContain('No disasters matched');
+  });
+
+  it('keeps the broaden-your-search notice when nothing actually matched', async () => {
+    mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebSearchDisasters.input.parse({ offset: 5000 });
+    await reliefwebSearchDisasters.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toContain('No disasters matched');
   });
 });

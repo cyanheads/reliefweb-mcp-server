@@ -4,6 +4,7 @@
  * @module tests/services/reliefweb-service.test
  */
 
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createInMemoryStorage, createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
@@ -18,6 +19,21 @@ function makeOkResponse(body: unknown): Response {
     status: 200,
     text: async () => text,
   } as Response;
+}
+
+/**
+ * Non-OK Response stand-in. Beyond `makeOkResponse`'s fields, the error path also reads
+ * `statusText`, `url`, and the `retry-after` header.
+ */
+function makeErrorResponse(status: number, body: string, statusText = ''): Response {
+  return {
+    ok: false,
+    status,
+    statusText,
+    url: 'https://api.reliefweb.int/v2/reports',
+    text: async () => body,
+    headers: { get: () => null },
+  } as unknown as Response;
 }
 
 function makeService(): ReliefWebService {
@@ -585,5 +601,81 @@ describe('ReliefWebService — search request shape', () => {
     await makeService().searchJobs({ sort: 'date.closing:asc' }, createMockContext());
 
     expect(lastPostedQuery().sort).toEqual(['date.closing:asc']);
+  });
+
+  it('threads already-resolved date bounds into the range filter verbatim (issue #21)', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
+
+    await makeService().searchReports(
+      { dateFrom: '2026-07-01T00:00:00+00:00', dateTo: '2026-07-31T23:59:59+00:00' },
+      createMockContext(),
+    );
+
+    expect(lastPostedQuery().filter).toEqual({
+      field: 'date.original',
+      value: { from: '2026-07-01T00:00:00+00:00', to: '2026-07-31T23:59:59+00:00' },
+    });
+  });
+});
+
+// ─── Issue #20: upstream 400 detail survives the service boundary ─────────────
+
+describe('ReliefWebService — upstream error classification', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const rejectedSortBody = JSON.stringify({
+    status: 400,
+    error: {
+      type: 'UnexpectedValueException',
+      message:
+        "Unrecognized sort field 'bogus.field'. Check the entity information for available fields.",
+    },
+  });
+
+  it('a POST 400 throws InvalidParams carrying the ReliefWeb message, not a generic ServiceUnavailable', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeErrorResponse(400, rejectedSortBody, 'Bad Request'),
+    );
+
+    const err = await makeService()
+      .searchReports({ sort: 'bogus.field:desc' }, createMockContext())
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(McpError);
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).message).toContain("Unrecognized sort field 'bogus.field'");
+    expect((err as McpError).data).toMatchObject({
+      upstreamMessage:
+        "Unrecognized sort field 'bogus.field'. Check the entity information for available fields.",
+    });
+  });
+
+  it('a GET 400 gets the same treatment as the POST path', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeErrorResponse(400, rejectedSortBody));
+
+    const err = await makeService()
+      .getReport(1, createMockContext())
+      .catch((e: unknown) => e);
+
+    expect((err as McpError).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect((err as McpError).message).toContain("Unrecognized sort field 'bogus.field'");
+  });
+
+  it('does not retry a rejected query — one call, no burnt quota', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(makeErrorResponse(400, rejectedSortBody));
+
+    await makeService()
+      .searchReports({ sort: 'bogus.field:desc' }, createMockContext())
+      .catch(() => undefined);
+
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce();
   });
 });

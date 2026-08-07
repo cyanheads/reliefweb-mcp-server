@@ -1,6 +1,7 @@
 /**
  * @fileoverview ReliefWeb API v2 service — POST query builder, retry, field selection,
- * normalization helpers for all content types.
+ * normalization helpers for all content types. Non-OK responses are classified and
+ * carry ReliefWeb's own error text (see `upstream-errors.ts`).
  * @module services/reliefweb/reliefweb-service
  */
 
@@ -8,7 +9,7 @@ import type { Context } from '@cyanheads/mcp-ts-core';
 import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
 import { serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
 import type { StorageService } from '@cyanheads/mcp-ts-core/storage';
-import { httpErrorFromResponse, withRetry } from '@cyanheads/mcp-ts-core/utils';
+import { withRetry } from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig } from '@/config/server-config.js';
 import type {
   ContentType,
@@ -32,6 +33,7 @@ import type {
   SourceSummary,
   TrainingSummary,
 } from './types.js';
+import { upstreamHttpError } from './upstream-errors.js';
 
 const BASE_URL = 'https://api.reliefweb.int/v2';
 
@@ -131,10 +133,7 @@ export class ReliefWebService {
         });
 
         if (!response.ok) {
-          throw await httpErrorFromResponse(response, {
-            service: 'ReliefWeb',
-            data: { contentType, url },
-          });
+          throw await upstreamHttpError(response, { contentType, url });
         }
 
         const text = await response.text();
@@ -175,10 +174,7 @@ export class ReliefWebService {
         if (response.status === 404) return null;
 
         if (!response.ok) {
-          throw await httpErrorFromResponse(response, {
-            service: 'ReliefWeb',
-            data: { contentType, id, url },
-          });
+          throw await upstreamHttpError(response, { contentType, id, url });
         }
 
         const text = await response.text();
@@ -220,6 +216,11 @@ export class ReliefWebService {
     return this.buildAndFilter(builtConditions);
   }
 
+  /**
+   * Builds a `{ from, to }` range condition. Bounds arrive already resolved to full ISO
+   * 8601 datetimes — `resolveDateBound` runs at the tool layer, where the resolved value
+   * also feeds `appliedFilters`, so both response paths echo the query that ran.
+   */
   private makeDateFilter(
     field: string,
     from: string | undefined,

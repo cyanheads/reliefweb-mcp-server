@@ -148,3 +148,81 @@ describe('reliefwebListCountries', () => {
     expect(text).toContain('France');
   });
 });
+
+// ─── Issue #20: rejected query vs service failure ────────────────────────────
+
+describe('reliefwebListCountries — upstream error contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('throws ctx.fail("invalid_query") with the ReliefWeb message when the request is rejected', async () => {
+    mockListCountries.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400.', {
+        upstreamMessage: "Invalid filter field 'bogus'.",
+      }),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
+    const input = reliefwebListCountries.input.parse({});
+
+    const err = (await reliefwebListCountries
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain("Invalid filter field 'bogus'");
+    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+  });
+});
+
+// ─── Issue #22: paged past the end of a result set ───────────────────────────
+
+describe('reliefwebListCountries — offset past the end of the result set', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('names the offset and the last reachable page instead of calling the list empty', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 296 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListCountries.input.parse({ offset: 5000, limit: 100 });
+    await reliefwebListCountries.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('5000');
+    expect(notice).toContain('296');
+    expect(notice).toContain('offset 200');
+    expect(notice).not.toMatch(/unfiltered zero-match/i);
+  });
+
+  it('reports an offset past the end even when crisis_only narrowed the list', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 34 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListCountries.input.parse({
+      crisis_only: true,
+      offset: 500,
+      limit: 10,
+    });
+    await reliefwebListCountries.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('offset 30');
+    expect(notice).not.toContain('crisis_only=false');
+  });
+
+  it('keeps the zero-match notice when the filter genuinely matched nothing', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListCountries.input.parse({ crisis_only: true, offset: 5000 });
+    await reliefwebListCountries.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('crisis_only=false');
+    expect(notice).not.toContain('past the end');
+  });
+});

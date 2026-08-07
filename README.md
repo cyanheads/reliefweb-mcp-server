@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.14-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.14-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.15-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.14-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -40,7 +40,7 @@
 | `reliefweb_get_country` | Fetch a country profile by ISO3 code with overview, appeals, and curated links |
 | `reliefweb_list_countries` | List all countries tracked by ReliefWeb, filterable to active humanitarian situations |
 | `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and experience level |
-| `reliefweb_search_training` | Search training and learning opportunities by format, country, career category, and date |
+| `reliefweb_search_training` | Search training and learning opportunities by format, country, career category, and date — upcoming starts by default |
 | `reliefweb_list_sources` | Browse contributing organizations by name and type |
 
 ### `reliefweb_search_reports`
@@ -49,7 +49,7 @@ Search humanitarian reports on ReliefWeb with rich filtering.
 
 - Full-text search across title, body, and key metadata fields
 - Filtering by country (ISO3), disaster ID, format, theme, language, and source organization
-- Date range filtering on source publication date
+- Date range filtering on source publication date — a bare `2024-01-15` is accepted alongside full ISO 8601
 - Raw filter object for compound conditions not covered by named params
 - Pagination via offset and limit (up to 1,000 per call)
 - Optional `include_archived=true` for historical research (includes expired and archived content)
@@ -74,7 +74,7 @@ Search active and historical disasters on ReliefWeb.
 
 - Filtering by disaster type (Earthquake, Flood, Cyclone, etc.), country, and status
 - GLIDE number lookup for cross-system disaster correlation
-- Date range filtering on disaster creation date
+- Date range filtering on disaster creation date — a bare `2024-01-15` is accepted alongside full ISO 8601
 - Status values: `alert`, `current`, `past`, `alert-archive`, `archive`; multiple values comma-separated
 - Optional `include_archived=true` for historical research
 - Returns IDs for use with `reliefweb_get_disaster` and as `disaster_id` filter in `reliefweb_search_reports`
@@ -132,7 +132,8 @@ Search humanitarian training and learning opportunities.
 
 - Covers on-site and online capacity-building events
 - Filtering by country, source, format, career category, and language
-- Date range filtering on training start date (`date_start_from` / `date_start_to`)
+- Date range filtering on training start date (`date_start_from` / `date_start_to`) — a bare `2024-06-01` is accepted alongside full ISO 8601
+- Scoped to training starting from now when neither bound is given; supply either one to search an explicit range, including a historical one
 - Ordered by soonest start date by default (`date.start:asc`); override with `sort`
 - Distinct from report date fields — uses `date.start` / `date.end`
 

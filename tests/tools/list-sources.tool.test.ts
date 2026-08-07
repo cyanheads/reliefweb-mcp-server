@@ -166,3 +166,63 @@ describe('reliefwebListSources', () => {
     expect(text).not.toContain('undefined');
   });
 });
+
+// ─── Issue #20: rejected query vs service failure ────────────────────────────
+
+describe('reliefwebListSources — upstream error contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('throws ctx.fail("invalid_query") with the ReliefWeb message when the request is rejected', async () => {
+    mockListSources.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400.', {
+        upstreamMessage: "Invalid filter field 'bogus'.",
+      }),
+    );
+
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
+    const input = reliefwebListSources.input.parse({ text: 'WFP' });
+
+    const err = (await reliefwebListSources
+      .handler(input, ctx)
+      .catch((e: unknown) => e)) as McpError;
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.message).toContain("Invalid filter field 'bogus'");
+    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+  });
+});
+
+// ─── Issue #22: paged past the end of a result set ───────────────────────────
+
+describe('reliefwebListSources — offset past the end of the result set', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('names the offset and the last reachable page instead of claiming no matches', async () => {
+    mockListSources.mockResolvedValue({ items: [], totalCount: 7031 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListSources.input.parse({ offset: 99999, limit: 100 });
+    await reliefwebListSources.handler(input, ctx);
+
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toContain('99999');
+    expect(notice).toContain('7031');
+    expect(notice).toContain('offset 7000');
+    expect(notice).not.toContain('No sources matched');
+  });
+
+  it('keeps the broaden-your-search notice when nothing actually matched', async () => {
+    mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
+
+    const ctx = createMockContext();
+    const input = reliefwebListSources.input.parse({ text: 'zzznomatch' });
+    await reliefwebListSources.handler(input, ctx);
+
+    expect(getEnrichment(ctx).notice).toContain('No sources matched');
+  });
+});

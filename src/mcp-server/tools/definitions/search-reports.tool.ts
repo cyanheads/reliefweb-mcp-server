@@ -5,8 +5,19 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
+import {
+  DATE_BOUND_FORMAT_MESSAGE,
+  DATE_BOUND_PATTERN,
+  resolveDateBound,
+} from '@/services/reliefweb/date-utils.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import type { FilterCondition } from '@/services/reliefweb/types.js';
+import {
+  isRejectedQueryError,
+  rejectedQueryMessage,
+  upstreamErrorMessage,
+} from '@/services/reliefweb/upstream-errors.js';
 
 export const reliefwebSearchReports = tool('reliefweb_search_reports', {
   title: 'Search ReliefWeb Reports',
@@ -58,15 +69,33 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .optional()
       .describe('Organization short name (e.g., UNHCR, OCHA, WFP). Filters on source.shortname.'),
     date_from: z
-      .string()
+      .union([
+        z.literal(''),
+        z
+          .string()
+          .regex(DATE_BOUND_PATTERN, DATE_BOUND_FORMAT_MESSAGE)
+          .describe(
+            'Calendar date (2024-01-15) or full ISO 8601 datetime (2024-01-15T00:00:00+00:00).',
+          ),
+      ])
       .optional()
       .describe(
-        'Earliest publication date (ISO 8601, e.g., 2024-01-15T00:00:00+00:00). Filters on date.original (source publication date).',
+        'Earliest publication date. Filters on date.original (source publication date). A bare calendar date such as 2024-01-15 is accepted and resolves to start of that day in UTC; a datetime carrying any offset is resolved to UTC.',
       ),
     date_to: z
-      .string()
+      .union([
+        z.literal(''),
+        z
+          .string()
+          .regex(DATE_BOUND_PATTERN, DATE_BOUND_FORMAT_MESSAGE)
+          .describe(
+            'Calendar date (2024-01-31) or full ISO 8601 datetime (2024-01-31T23:59:59+00:00).',
+          ),
+      ])
       .optional()
-      .describe('Latest publication date (ISO 8601). Pair with date_from for a date range.'),
+      .describe(
+        'Latest publication date. Pair with date_from for a date range. A bare calendar date resolves to end of that day in UTC, so the range covers it in full; a datetime carrying any offset is resolved to UTC.',
+      ),
     sort: z
       .string()
       .optional()
@@ -171,16 +200,23 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .string()
       .optional()
       .describe(
-        'Recovery hint when results are empty — echoes the filters applied and suggests how to broaden. Absent on successful result pages.',
+        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
       ),
   },
   errors: [
     {
+      reason: 'invalid_query',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'ReliefWeb rejected the query — an unrecognized sort field, an invalid raw filter object, or a malformed date.',
+      recovery:
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort and filter fields must be real ReliefWeb field names, and dates take a calendar date or a full ISO 8601 datetime.',
+    },
+    {
       reason: 'upstream_error',
       code: JsonRpcErrorCode.ServiceUnavailable,
-      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      when: 'The ReliefWeb API was unreachable, timed out, or returned a server error.',
       recovery:
-        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted, and verify any raw filter object is well-formed.',
+        'Wait a moment and retry. If the message names a configuration or quota problem — an unapproved appname, or the 1,000 calls/day limit — that must be resolved before any retry can succeed.',
     },
   ],
 
@@ -192,6 +228,8 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     });
 
     const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+    const dateFrom = resolveDateBound(input.date_from, 'from');
+    const dateTo = resolveDateBound(input.date_to, 'to');
 
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
@@ -201,8 +239,8 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       ...(input.theme?.trim() ? { theme: input.theme } : {}),
       ...(input.language?.trim() ? { language: input.language } : {}),
       ...(input.source?.trim() ? { source: input.source } : {}),
-      ...(input.date_from?.trim() ? { dateFrom: input.date_from } : {}),
-      ...(input.date_to?.trim() ? { dateTo: input.date_to } : {}),
+      ...(dateFrom ? { dateFrom } : {}),
+      ...(dateTo ? { dateTo } : {}),
       ...(input.filter != null ? { rawFilter: true } : {}),
       sort: input.sort?.trim() || 'date.original:desc',
       preset: input.include_archived ? 'analysis' : 'latest',
@@ -220,8 +258,8 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
           ...(input.theme?.trim() ? { theme: input.theme } : {}),
           ...(input.language?.trim() ? { language: input.language } : {}),
           ...(input.source?.trim() ? { source: input.source } : {}),
-          ...(input.date_from?.trim() ? { dateFrom: input.date_from } : {}),
-          ...(input.date_to?.trim() ? { dateTo: input.date_to } : {}),
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
           ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
           ...(input.filter != null ? { rawFilter: input.filter as FilterCondition } : {}),
@@ -231,15 +269,34 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         ctx,
       )
       .catch((err: unknown) => {
-        throw ctx.fail('upstream_error', 'ReliefWeb API error while searching reports.', {
-          cause: err,
-          ...ctx.recoveryFor('upstream_error'),
-        });
+        if (isRejectedQueryError(err)) {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('reports', err), {
+            cause: err,
+            ...ctx.recoveryFor('invalid_query'),
+          });
+        }
+        throw ctx.fail(
+          'upstream_error',
+          upstreamErrorMessage('ReliefWeb API error while searching reports.', err),
+          {
+            cause: err,
+            ...ctx.recoveryFor('upstream_error'),
+          },
+        );
       });
 
     ctx.enrich.total(result.totalCount);
 
-    if (result.items.length === 0) {
+    if (result.items.length === 0 && result.totalCount > 0) {
+      ctx.enrich.notice(
+        pagedPastEndNotice({
+          subject: 'reports',
+          offset: input.offset,
+          totalCount: result.totalCount,
+          limit: input.limit,
+        }),
+      );
+    } else if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
       if (country) filters.push(`country=${country}`);
@@ -248,8 +305,8 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       if (input.theme) filters.push(`theme="${input.theme}"`);
       if (input.language) filters.push(`language=${input.language}`);
       if (input.source) filters.push(`source="${input.source}"`);
-      if (input.date_from) filters.push(`date_from=${input.date_from}`);
-      if (input.date_to) filters.push(`date_to=${input.date_to}`);
+      if (dateFrom) filters.push(`date_from=${dateFrom}`);
+      if (dateTo) filters.push(`date_to=${dateTo}`);
       ctx.enrich.notice(
         `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broadening the search by removing filters, using different keywords, or checking country codes.',

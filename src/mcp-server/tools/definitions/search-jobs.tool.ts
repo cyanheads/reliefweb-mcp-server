@@ -5,7 +5,13 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
+import {
+  isRejectedQueryError,
+  rejectedQueryMessage,
+  upstreamErrorMessage,
+} from '@/services/reliefweb/upstream-errors.js';
 
 export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
   title: 'Search ReliefWeb Jobs',
@@ -124,16 +130,23 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .string()
       .optional()
       .describe(
-        'Recovery hint when results are empty — echoes filters applied and suggests how to broaden.',
+        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
       ),
   },
   errors: [
     {
+      reason: 'invalid_query',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'ReliefWeb rejected the query — typically an unrecognized sort field.',
+      recovery:
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort fields must be real ReliefWeb field names such as date.created or date.closing.',
+    },
+    {
       reason: 'upstream_error',
       code: JsonRpcErrorCode.ServiceUnavailable,
-      when: 'The ReliefWeb API returned an error response or was unreachable.',
+      when: 'The ReliefWeb API was unreachable, timed out, or returned a server error.',
       recovery:
-        'Wait a moment and retry. ReliefWeb enforces a 1,000 calls/day quota — check whether the quota is exhausted before retrying.',
+        'Wait a moment and retry. If the message names a configuration or quota problem — an unapproved appname, or the 1,000 calls/day limit — that must be resolved before any retry can succeed.',
     },
   ],
 
@@ -175,15 +188,34 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
         ctx,
       )
       .catch((err: unknown) => {
-        throw ctx.fail('upstream_error', 'ReliefWeb API error while searching jobs.', {
-          cause: err,
-          ...ctx.recoveryFor('upstream_error'),
-        });
+        if (isRejectedQueryError(err)) {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('jobs', err), {
+            cause: err,
+            ...ctx.recoveryFor('invalid_query'),
+          });
+        }
+        throw ctx.fail(
+          'upstream_error',
+          upstreamErrorMessage('ReliefWeb API error while searching jobs.', err),
+          {
+            cause: err,
+            ...ctx.recoveryFor('upstream_error'),
+          },
+        );
       });
 
     ctx.enrich.total(result.totalCount);
 
-    if (result.items.length === 0) {
+    if (result.items.length === 0 && result.totalCount > 0) {
+      ctx.enrich.notice(
+        pagedPastEndNotice({
+          subject: 'jobs',
+          offset: input.offset,
+          totalCount: result.totalCount,
+          limit: input.limit,
+        }),
+      );
+    } else if (result.items.length === 0) {
       const filters: string[] = [];
       if (input.text) filters.push(`text="${input.text}"`);
       if (country) filters.push(`country=${country}`);

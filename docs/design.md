@@ -13,7 +13,7 @@
 | `reliefweb_get_country` | Fetch a country profile with overview, humanitarian situation summary, key content links, and active appeals/response plans. | `iso3` | `readOnlyHint: true` |
 | `reliefweb_list_countries` | List all countries and territories tracked by ReliefWeb, optionally filtered by crisis status. | `crisis_only`, `limit`, `offset` | `readOnlyHint: true` |
 | `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and theme. | `text`, `country`, `source`, `career_category`, `theme`, `experience`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_search_training` | Search humanitarian training and learning opportunities by country, format, date, source, and career category. | `text`, `country`, `source`, `format`, `career_category`, `language`, `date_start_from`, `date_start_to`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_search_training` | Search humanitarian training and learning opportunities by country, format, date, source, and career category. Defaults to training starting from now when no date bound is given. | `text`, `country`, `source`, `format`, `career_category`, `language`, `date_start_from`, `date_start_to`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
 | `reliefweb_list_sources` | Browse source organizations that contribute content to ReliefWeb, optionally filtered by name or type. | `text`, `type`, `limit`, `offset` | `readOnlyHint: true` |
 
 ### Resources
@@ -170,8 +170,8 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | all search tools | `offset` | Zero-based offset for pagination. Use with `limit` and `totalCount` from the response to page through large result sets. |
 | `reliefweb_search_reports` | `format` | Content format filter. Valid values: `Situation Report`, `Assessment`, `Analysis`, `Map`, `Infographic`, `Manual and Guideline`, `News and Press Release`, `Policy Document`, `Appeal`, `Financial Report`, `Evaluation and Lessons Learned`, `Other`. |
 | `reliefweb_search_reports` | `theme` | Sector or cross-cutting theme (e.g., `Health`, `Food and Nutrition`, `Shelter and NFI`, `Protection`). Matches `theme.name`. |
-| `reliefweb_search_reports` | `date_from` | Earliest publication date (ISO 8601, e.g., `2024-01-15T00:00:00+00:00`). Filters on `date.original` (source publication date). |
-| `reliefweb_search_reports` | `date_to` | Latest publication date (ISO 8601). Pair with `date_from` for a date range. |
+| `reliefweb_search_reports` | `date_from` | Earliest publication date. Filters on `date.original` (source publication date). Accepts a bare calendar date (`2024-01-15`, resolved to start of day UTC) or a full ISO 8601 datetime in any offset, resolved to UTC. |
+| `reliefweb_search_reports` | `date_to` | Latest publication date. Pair with `date_from` for a date range. A bare calendar date resolves to end of day UTC, so the range covers it in full. |
 | `reliefweb_search_reports` | `disaster_id` | ReliefWeb numeric disaster ID. Filters to reports linked to a specific disaster. Get the ID from `reliefweb_search_disasters`. |
 | `reliefweb_search_reports` | `language` | ISO 639-1 language code (e.g., `en`, `fr`, `es`, `ar`). Filters on `language.code`. |
 | `reliefweb_search_reports` | `source` | Organization short name (e.g., `UNHCR`, `OCHA`, `WFP`). Filters on `source.shortname`. |
@@ -186,8 +186,8 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | `reliefweb_search_jobs` | `career_category` | Humanitarian career track (e.g., `Programme and Project Management`, `Information and Communications Technology`, `Logistics and Telecommunications`). Filters on `career_categories.name`. |
 | `reliefweb_search_jobs` | `experience` | Experience level (e.g., `0-2 years`, `3-4 years`, `5-9 years`). Filters on `experience.name`. |
 | `reliefweb_search_jobs` | `sort` | Sort order. `date.created:desc` for newest postings first (default), `date.closing:asc` to surface roles closing soonest, `score:desc` for relevance. |
-| `reliefweb_search_training` | `date_start_from` | Training start date lower bound (ISO 8601). Filters on `date.start` — use to find training starting after a given date. |
-| `reliefweb_search_training` | `date_start_to` | Training start date upper bound (ISO 8601). Filters on `date.start` — pair with `date_start_from` for a window. |
+| `reliefweb_search_training` | `date_start_from` | Training start date lower bound. Filters on `date.start` — use to find training starting after a given date. Accepts a bare calendar date or a full ISO 8601 datetime. Omitting both start-date bounds defaults the lower bound to the current timestamp. |
+| `reliefweb_search_training` | `date_start_to` | Training start date upper bound. Filters on `date.start` — pair with `date_start_from` for a window. A bare calendar date resolves to end of day UTC. Supplying it alone leaves the lower bound open. |
 | `reliefweb_search_training` | `sort` | Sort order. `date.start:asc` for soonest-starting first (default), `date.start:desc` for latest-starting, `date.created:desc` for most recently posted, `score:desc` for relevance. |
 | `reliefweb_list_sources` | `type` | Organization type. One of: `Non-governmental Organization`, `International Organization`, `Academic and Research Institution`, `Other`, `Government`, `Media`, `Red Cross/Red Crescent Movement`. Filters on `type.name`. |
 
@@ -235,12 +235,13 @@ A crisis briefing is best served as a reusable prompt template (agent-invokable,
 
 | Origin | Code | When | Retryable |
 |:-------|:-----|:-----|:----------|
-| Missing/unapproved appname | `Unauthorized` | API returns 403 `AccessDeniedHttpException` | No — fix `RELIEFWEB_APP_NAME` config |
-| Rate limit exceeded | `ServiceUnavailable` | API returns 429 or daily 1,000-call quota hit | Yes — back off; advise caching |
+| Missing/unapproved appname | `ServiceUnavailable` | API returns 403; reason `upstream_error`, with ReliefWeb's own "not using an approved appname" text quoted in the message | No — fix `RELIEFWEB_APP_NAME` config |
+| Rate limit exceeded | `ServiceUnavailable` | API returns 429 or daily 1,000-call quota hit; reason `upstream_error` | Yes — back off; advise caching |
 | Upstream timeout/5xx | `ServiceUnavailable` | Network failure or ReliefWeb service degraded | Yes — retry with backoff |
-| Invalid filter value | `InvalidParams` | Bad ISO3 code, unrecognized format name, out-of-range limit | No — fix the input |
+| Invalid filter value | `InvalidParams` | ReliefWeb rejects the query — unrecognized sort field, invalid raw filter object, malformed date. Reason `invalid_query`; ReliefWeb's own explanation is folded into the error message so it reaches `content[]` as well as `structuredContent` | No — fix the input |
 | Record not found | `NotFound` | Valid ID format but no matching record | No — verify the ID |
-| Empty result set | Not an error | Valid query with zero matches — return empty array with `totalCount: 0` | N/A |
+| Empty result set | Not an error | Valid query with zero matches — return empty array with `totalCount: 0` and a broaden-your-search notice | N/A |
+| Offset past the end | Not an error | Valid query, empty page, `totalCount > 0` — the notice names `totalCount` and the last reachable page offset instead of claiming nothing matched. Applies to every tool that pages: the four search tools, `list_sources`, and `list_countries` | N/A |
 
 ### Error message guidance
 
@@ -250,7 +251,7 @@ A crisis briefing is best served as a reusable prompt template (agent-invokable,
 
 ### Retry policy
 
-Retry on 5xx and network errors with exponential backoff (base 500ms, max 3 attempts). Do not retry 4xx responses — they indicate a client error the agent should resolve.
+Retry on 5xx and network errors with exponential backoff. Do not retry 4xx responses — they indicate a client error the agent should resolve. The tool error contract mirrors that split: a rejected request (`InvalidParams` / `InvalidRequest` / `ValidationError`) fails as `invalid_query` and tells the caller to correct the input, while everything else — 5xx, timeouts, rate limits, auth failures, and the HTML block page — stays on `upstream_error` with the wait-and-retry guidance. Both branches quote ReliefWeb's own explanation in the error message, so it reaches `content[]` and not only `structuredContent`.
 
 ---
 
@@ -262,7 +263,7 @@ Retry on 5xx and network errors with exponential backoff (base 500ms, max 3 atte
 - **No geospatial queries** — ReliefWeb's API filters by country, not bounding box or coordinates. Pairing with NWS/earthquake servers is the right path for geo-contextual disaster research.
 - **Publishing API is separate** — creating or updating ReliefWeb content requires a Publishing API key and separate auth flow. This server is read-only.
 - **Data quality is editorial, not real-time** — ReliefWeb content is curated by OCHA editors. There can be a lag between a disaster event and indexed reports.
-- **Training date fields differ from report date fields** — training uses `date.start` / `date.end` / `date.registration`, not `date.original`. The search tool exposes `date_start_from` / `date_start_to` accordingly.
+- **Training date fields differ from report date fields** — training uses `date.start` / `date.end` / `date.registration`, not `date.original`. The search tool exposes `date_start_from` / `date_start_to` accordingly, and defaults an unbounded search to a lower bound of the current timestamp so the first page is upcoming rather than long-past starts.
 - **`disaster.id` vs `id` in filter context** — when filtering reports by disaster, use `disaster.id` (the integer field on reports pointing to the linked disaster), not `id` (the report's own ID).
 
 ---
@@ -343,3 +344,7 @@ GET https://api.reliefweb.int/v2/{content_type}/{id}?appname={name}&profile=full
 | 2026-05-23 | Body field excluded from search results | Report bodies can be 10–100KB each. Fetching body in list queries would exhaust context budget rapidly. Agents call `get_report` for document content when needed. |
 | 2026-07-13 | Country/disaster profile sub-arrays surface the active set only, not active+archive | The `profile.key_content` / `appeals_response_plans` / `useful_links` `archive` halves run to thousands of entries for long-running crises (SYR merged to 381KB, exceeding the client token limit). `keyContent` should reflect what ReliefWeb currently curates, not its full history — active-only is a ~78x reduction for SYR. Capping-to-N or pagination add complexity the numbers don't justify. |
 | 2026-07-13 | `sort` exposed on `search_jobs` and `search_training`; training defaults to `date.start:asc` | Reports/disasters already exposed `sort`; jobs/training hardcoded `date.created:desc` with no input, so `appliedFilters.sort` never reflected a real value. Training is documented for finding upcoming training, so its default becomes soonest-starting (`date.start:asc`); jobs keep newest-posted (`date.created:desc`). |
+| 2026-08-06 | Upstream failures split into `invalid_query` and `upstream_error`, and ReliefWeb's message is folded into the thrown message | The error text path renders only `message` plus `data.recovery.hint`, so an explanation left in `data.body` never reaches `content[]`. Classification is by error code (`InvalidParams` / `InvalidRequest` / `ValidationError`), not by 4xx-vs-5xx: 401/403/429 are 4xx the caller cannot fix by editing the query, so they keep the retry-flavored contract — but they quote the upstream text too, since a 403 naming an unapproved appname is useless if the operator only ever sees "wait and retry". |
+| 2026-08-06 | Date bounds normalized in the tool handler, not in `makeDateFilter` or a Zod `.transform()` | `z.transform()` is barred from tool schemas (not JSON-Schema-serializable), and normalizing inside the shared service helper would leave `appliedFilters` echoing the unresolved raw value. Resolving once per field at the handler feeds both the service call and the echo, so `structuredContent` and `content[]` report the query that ran. Upper bounds resolve to end-of-day so an inclusive bare-date range covers its last day. ReliefWeb accepts exactly one datetime spelling on a range bound — `YYYY-MM-DDTHH:MM:SS` with a zero offset written `+00:00` or `+0000` — and answers `Z`, fractional seconds, a missing seconds component, and every non-zero offset with the same `It must be an ISO 8601 date.` 400, so the resolver converts the wider ISO 8601 surface to UTC rather than advertising forms that fail upstream. |
+| 2026-08-06 | `search_training` injects a current-timestamp lower bound only when both start-date bounds are absent | `date.start:asc` over the whole corpus opens on listings that already started, so the default call answered the wrong question. Injecting whenever either bound was supplied would silently break historical research, so an explicit range is left exactly as given. The bound is built directly as a full ISO datetime rather than pushed back through the input schema, since it is applied after validation. |
+| 2026-08-06 | Empty page with `totalCount > 0` gets its own notice naming the last reachable offset | Keying the notice on `items.length === 0` alone described a correct 1,775-match query as matching nothing and advised dropping the filters. The last-page offset is page-aligned (`floor((totalCount - 1) / limit) * limit`) so the returned value is one an unchanged `limit` can actually page to. `list_countries` carried the same defect behind a static string that mentioned offsets as boilerplate without ever comparing `totalCount` to `offset`, so it takes the same branch. |
