@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.16](changelog/0.1.x/0.1.16.md) — 2026-08-06
+
+search_reports.format and search_disasters.status now match ReliefWeb's real closed vocabularies and reject unmatched values instead of returning an empty page, include_archived reaches the jobs and training archives, and malformed resource URI IDs are rejected instead of silently coerced to a different record.
+
 ## [0.1.15](changelog/0.1.x/0.1.15.md) — 2026-08-06
 
 Upstream 400s now quote ReliefWeb's own rejection text and classify separately from service failures, date-range bounds accept a bare calendar date, search_training defaults to upcoming courses, and paging past the end of a result set names the last valid offset instead of reporting no matches.

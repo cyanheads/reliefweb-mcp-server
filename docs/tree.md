@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-08-07 02:39:52
+Generated on: 2026-08-07 03:13:03
 
 ```text
 reliefweb-mcp-server/
@@ -136,10 +136,11 @@ reliefweb-mcp-server/
 │   │   │   └── definitions/
 │   │   │       └── crisis-briefing.prompt.ts
 │   │   ├── resources/
-│   │   │   └── definitions/
-│   │   │       ├── country.resource.ts
-│   │   │       ├── disaster.resource.ts
-│   │   │       └── report.resource.ts
+│   │   │   ├── definitions/
+│   │   │   │   ├── country.resource.ts
+│   │   │   │   ├── disaster.resource.ts
+│   │   │   │   └── report.resource.ts
+│   │   │   └── resource-ids.ts
 │   │   └── tools/
 │   │       ├── definitions/
 │   │       │   ├── get-country.tool.ts
@@ -157,7 +158,8 @@ reliefweb-mcp-server/
 │   │       ├── date-utils.ts
 │   │       ├── reliefweb-service.ts
 │   │       ├── types.ts
-│   │       └── upstream-errors.ts
+│   │       ├── upstream-errors.ts
+│   │       └── vocabularies.ts
 │   └── index.ts
 ├── tests/
 │   ├── prompts/
@@ -169,7 +171,8 @@ reliefweb-mcp-server/
 │   ├── services/
 │   │   ├── date-utils.test.ts
 │   │   ├── reliefweb-service.test.ts
-│   │   └── upstream-errors.test.ts
+│   │   ├── upstream-errors.test.ts
+│   │   └── vocabularies.test.ts
 │   └── tools/
 │       ├── get-country.tool.test.ts
 │       ├── get-disaster.tool.test.ts
