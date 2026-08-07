@@ -13,7 +13,7 @@
     "ignorePatterns": []
   },
   "outdated": {
-    "allowlist": ["typescript"]
+    "allowlist": []
   },
   "packaging": {
     "pluginManifests": true

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.15](changelog/0.1.x/0.1.15.md) — 2026-08-06
+
+Upstream 400s now quote ReliefWeb's own rejection text and classify separately from service failures, date-range bounds accept a bare calendar date, search_training defaults to upcoming courses, and paging past the end of a result set names the last valid offset instead of reporting no matches.
+
 ## [0.1.14](changelog/0.1.x/0.1.14.md) — 2026-07-13
 
 Bounds get_country/get_disaster to ReliefWeb's currently-active curated links, fixing crisis-country responses that exceeded the client token limit; adds a sort input to search_jobs and search_training, with training now defaulting to soonest-starting.

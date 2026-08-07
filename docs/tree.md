@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-07-13 16:58:58
+Generated on: 2026-08-07 02:39:52
 
 ```text
 reliefweb-mcp-server/
@@ -141,20 +141,23 @@ reliefweb-mcp-server/
 │   │   │       ├── disaster.resource.ts
 │   │   │       └── report.resource.ts
 │   │   └── tools/
-│   │       └── definitions/
-│   │           ├── get-country.tool.ts
-│   │           ├── get-disaster.tool.ts
-│   │           ├── get-report.tool.ts
-│   │           ├── list-countries.tool.ts
-│   │           ├── list-sources.tool.ts
-│   │           ├── search-disasters.tool.ts
-│   │           ├── search-jobs.tool.ts
-│   │           ├── search-reports.tool.ts
-│   │           └── search-training.tool.ts
+│   │       ├── definitions/
+│   │       │   ├── get-country.tool.ts
+│   │       │   ├── get-disaster.tool.ts
+│   │       │   ├── get-report.tool.ts
+│   │       │   ├── list-countries.tool.ts
+│   │       │   ├── list-sources.tool.ts
+│   │       │   ├── search-disasters.tool.ts
+│   │       │   ├── search-jobs.tool.ts
+│   │       │   ├── search-reports.tool.ts
+│   │       │   └── search-training.tool.ts
+│   │       └── pagination.ts
 │   ├── services/
 │   │   └── reliefweb/
+│   │       ├── date-utils.ts
 │   │       ├── reliefweb-service.ts
-│   │       └── types.ts
+│   │       ├── types.ts
+│   │       └── upstream-errors.ts
 │   └── index.ts
 ├── tests/
 │   ├── prompts/
@@ -164,13 +167,16 @@ reliefweb-mcp-server/
 │   │   ├── disaster.resource.test.ts
 │   │   └── report.resource.test.ts
 │   ├── services/
-│   │   └── reliefweb-service.test.ts
+│   │   ├── date-utils.test.ts
+│   │   ├── reliefweb-service.test.ts
+│   │   └── upstream-errors.test.ts
 │   └── tools/
 │       ├── get-country.tool.test.ts
 │       ├── get-disaster.tool.test.ts
 │       ├── get-report.tool.test.ts
 │       ├── list-countries.tool.test.ts
 │       ├── list-sources.tool.test.ts
+│       ├── pagination.test.ts
 │       ├── search-disasters.tool.test.ts
 │       ├── search-jobs.tool.test.ts
 │       ├── search-reports-edge.tool.test.ts
