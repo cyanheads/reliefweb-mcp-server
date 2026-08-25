@@ -1,10 +1,9 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-08-07 04:59:07
+Generated on: 2026-08-25 06:56:57
 
 ```text
 reliefweb-mcp-server/
-├── .claude/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── .codex-plugin/
@@ -15,6 +14,8 @@ reliefweb-mcp-server/
 │   │   ├── bug_report.yml
 │   │   ├── config.yml
 │   │   └── feature_request.yml
+│   ├── CODE_OF_CONDUCT.md
+│   ├── CONTRIBUTING.md
 │   ├── FUNDING.yml
 │   └── SECURITY.md
 ├── .vscode/

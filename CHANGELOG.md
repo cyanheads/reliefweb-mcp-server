@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.1](changelog/0.2.x/0.2.1.md) — 2026-08-25
+
+Framework bump to mcp-ts-core ^0.12.3 tightens the wire — tool inputs reject undeclared argument keys, the outputSchema declares the error envelope, and schemas emit as JSON Schema 2020-12 — plus scaffolded community-health files, a Docker multi-arch build fix, and a devcheck audit-classifier fix for Bun 1.4.
+
 ## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-08-06
 
 reliefweb_get_job and reliefweb_get_training complete the search-to-get pattern for jobs and training, all five by-ID detail tools outline oversized records instead of truncating them, and reliefweb_get_country/reliefweb_get_disaster can page each curated list's archived entries.
