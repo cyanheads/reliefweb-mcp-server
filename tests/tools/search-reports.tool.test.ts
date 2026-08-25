@@ -37,7 +37,7 @@ describe('reliefwebSearchReports', () => {
     ];
     mockSearchReports.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ text: 'syria', limit: 10 });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -49,7 +49,7 @@ describe('reliefwebSearchReports', () => {
   it('echoes appliedFilters with normalized values and resolved defaults', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       text: 'flood',
       country: 'syr',
@@ -72,7 +72,7 @@ describe('reliefwebSearchReports', () => {
   it('appliedFilters echoes the resolved sort and rawFilter flag', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       sort: 'score:desc',
       filter: { field: 'language.code', value: 'fr' },
@@ -91,7 +91,9 @@ describe('reliefwebSearchReports', () => {
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ text: 'syria' });
 
-    const err = await reliefwebSearchReports.handler(input, ctx).catch((e: unknown) => e);
+    const err = await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(McpError);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
@@ -104,7 +106,7 @@ describe('reliefwebSearchReports', () => {
   it('populates notice enrichment when no reports match', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ text: 'zzznomatch', country: 'XYZ' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -118,7 +120,7 @@ describe('reliefwebSearchReports', () => {
   it('applies defaults for limit and offset', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({});
 
     expect(input.limit).toBe(10);
@@ -135,13 +137,13 @@ describe('reliefwebSearchReports', () => {
     const items = [{ id: 999, title: 'Minimal Report' }];
     mockSearchReports.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ limit: 1 });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
     expect(result.items[0]).toMatchObject({ id: 999, title: 'Minimal Report' });
-    expect(result.items[0].dateCreated).toBeUndefined();
-    expect(result.items[0].countries).toBeUndefined();
+    expect(result.items[0]!.dateCreated).toBeUndefined();
+    expect(result.items[0]!.countries).toBeUndefined();
   });
 
   it('formats output completely including dateCreated and id', () => {
@@ -172,7 +174,7 @@ describe('reliefwebSearchReports', () => {
       },
     };
     const blocks = reliefwebSearchReports.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('1234567');
     expect(text).toContain('Test Report');
@@ -211,7 +213,7 @@ describe('reliefwebSearchReports — format vocabulary', () => {
   });
 
   it('sends the canonical spelling upstream when the caller lower-cases the value', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: 'news and press release' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -225,7 +227,7 @@ describe('reliefwebSearchReports — format vocabulary', () => {
   });
 
   it('accepts an upper-cased value', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: 'NEWS AND PRESS RELEASE' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -233,7 +235,7 @@ describe('reliefwebSearchReports — format vocabulary', () => {
   });
 
   it('accepts a value carrying surrounding whitespace', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: '  Situation Report  ' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -245,7 +247,7 @@ describe('reliefwebSearchReports — format vocabulary', () => {
   });
 
   it('accepts the ampersand spelling, which upstream resolves to the same reports', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: 'News & Press Release' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -257,7 +259,7 @@ describe('reliefwebSearchReports — format vocabulary', () => {
   });
 
   it('accepts UN Document, which the previous value list omitted', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: 'UN Document' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -268,9 +270,9 @@ describe('reliefwebSearchReports — format vocabulary', () => {
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: 'Policy Document' });
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err).toBeInstanceOf(McpError);
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
@@ -282,7 +284,7 @@ describe('reliefwebSearchReports — format vocabulary', () => {
   });
 
   it('treats a blank format as omitted rather than unknown', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ format: '   ' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -307,7 +309,7 @@ describe('reliefwebSearchReports — include_archived has no effect', () => {
   });
 
   it('does not forward it to the service — every preset returns the same reports', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ include_archived: true });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -318,7 +320,7 @@ describe('reliefwebSearchReports — include_archived has no effect', () => {
   });
 
   it('echoes preset=latest either way, on both response surfaces', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const archived = await reliefwebSearchReports.handler(
       reliefwebSearchReports.input.parse({ include_archived: true }),
       ctx,
@@ -333,5 +335,31 @@ describe('reliefwebSearchReports — include_archived has no effect', () => {
     const text = (reliefwebSearchReports.format!(archived)[0] as { text: string }).text;
     expect(text).toContain('preset=latest');
     expect(text).not.toContain('preset=analysis');
+  });
+});
+
+// ─── Strict tool inputs ──────────────────────────────────────────────────────
+
+describe('reliefwebSearchReports — root-level input strictness', () => {
+  it('rejects an undeclared root key by name instead of stripping it', () => {
+    const result = reliefwebSearchReports.input.safeParse({ text: 'floods', contry: 'SYR' });
+
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('contry');
+  });
+
+  it('still accepts arbitrary keys inside the raw filter record', () => {
+    const result = reliefwebSearchReports.input.safeParse({
+      filter: {
+        operator: 'AND',
+        conditions: [{ field: 'format.name', value: 'Map' }],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.filter).toEqual({
+      operator: 'AND',
+      conditions: [{ field: 'format.name', value: 'Map' }],
+    });
   });
 });

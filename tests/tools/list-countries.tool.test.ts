@@ -38,7 +38,7 @@ describe('reliefwebListCountries', () => {
     ];
     mockListCountries.mockResolvedValue({ items, totalCount: 2 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({});
     const result = await reliefwebListCountries.handler(input, ctx);
 
@@ -49,7 +49,7 @@ describe('reliefwebListCountries', () => {
   it('applies default limit of 100', async () => {
     mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({});
     expect(input.limit).toBe(100);
     await reliefwebListCountries.handler(input, ctx);
@@ -60,7 +60,7 @@ describe('reliefwebListCountries', () => {
   it('passes crisis_only filter when set', async () => {
     mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({ crisis_only: true });
     await reliefwebListCountries.handler(input, ctx);
 
@@ -73,7 +73,7 @@ describe('reliefwebListCountries', () => {
   it('populates notice enrichment when crisis_only returns no countries', async () => {
     mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({ crisis_only: true });
     const result = await reliefwebListCountries.handler(input, ctx);
 
@@ -91,7 +91,7 @@ describe('reliefwebListCountries', () => {
       totalCount: 1,
     });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({});
     await reliefwebListCountries.handler(input, ctx);
 
@@ -106,7 +106,9 @@ describe('reliefwebListCountries', () => {
     const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({});
 
-    const err = await reliefwebListCountries.handler(input, ctx).catch((e: unknown) => e);
+    const err = await Promise.resolve(reliefwebListCountries.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(McpError);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
@@ -117,12 +119,12 @@ describe('reliefwebListCountries', () => {
     const items = [{ id: 999, name: 'Minimal Country' }];
     mockListCountries.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({});
     const result = await reliefwebListCountries.handler(input, ctx);
 
     expect(result.items[0]).toMatchObject({ id: 999, name: 'Minimal Country' });
-    expect(result.items[0].iso3).toBeUndefined();
+    expect(result.items[0]!.iso3).toBeUndefined();
   });
 
   it('formats output including id for each item', () => {
@@ -139,7 +141,7 @@ describe('reliefwebListCountries', () => {
       ],
     };
     const blocks = reliefwebListCountries.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('10001');
     expect(text).toContain('Afghanistan');
@@ -166,9 +168,9 @@ describe('reliefwebListCountries — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({});
 
-    const err = (await reliefwebListCountries
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebListCountries.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
@@ -187,7 +189,7 @@ describe('reliefwebListCountries — offset past the end of the result set', () 
   it('names the offset and the last reachable page instead of calling the list empty', async () => {
     mockListCountries.mockResolvedValue({ items: [], totalCount: 296 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({ offset: 5000, limit: 100 });
     await reliefwebListCountries.handler(input, ctx);
 
@@ -201,7 +203,7 @@ describe('reliefwebListCountries — offset past the end of the result set', () 
   it('reports an offset past the end even when crisis_only narrowed the list', async () => {
     mockListCountries.mockResolvedValue({ items: [], totalCount: 34 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({
       crisis_only: true,
       offset: 500,
@@ -217,7 +219,7 @@ describe('reliefwebListCountries — offset past the end of the result set', () 
   it('keeps the zero-match notice when the filter genuinely matched nothing', async () => {
     mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListCountries.errors });
     const input = reliefwebListCountries.input.parse({ crisis_only: true, offset: 5000 });
     await reliefwebListCountries.handler(input, ctx);
 

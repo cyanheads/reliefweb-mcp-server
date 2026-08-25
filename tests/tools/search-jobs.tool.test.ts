@@ -37,7 +37,7 @@ describe('reliefwebSearchJobs', () => {
     ];
     mockSearchJobs.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({
       career_category: 'Programme and Project Management',
     });
@@ -51,7 +51,7 @@ describe('reliefwebSearchJobs', () => {
   it('populates notice enrichment when no jobs match', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({
       text: 'zzznomatch',
       country: 'ZZZ',
@@ -69,7 +69,7 @@ describe('reliefwebSearchJobs', () => {
   it('empty-result notice echoes source, theme, and experience filters', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({
       source: 'UNHCR',
       theme: 'Protection',
@@ -86,7 +86,7 @@ describe('reliefwebSearchJobs', () => {
   it('echoes appliedFilters with normalized country and resolved sort', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ country: 'ken', source: 'WFP', limit: 20 });
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
@@ -102,7 +102,7 @@ describe('reliefwebSearchJobs', () => {
   it('threads an explicit sort into the service call and echoes it in appliedFilters', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ sort: 'date.closing:asc' });
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
@@ -121,7 +121,9 @@ describe('reliefwebSearchJobs', () => {
     const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ text: 'officer' });
 
-    const err = await reliefwebSearchJobs.handler(input, ctx).catch((e: unknown) => e);
+    const err = await Promise.resolve(reliefwebSearchJobs.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(McpError);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
@@ -131,7 +133,7 @@ describe('reliefwebSearchJobs', () => {
   it('normalizes country code to uppercase', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ country: 'afg' });
     await reliefwebSearchJobs.handler(input, ctx);
 
@@ -142,12 +144,12 @@ describe('reliefwebSearchJobs', () => {
     const items = [{ id: 1, title: 'Minimal Job' }];
     mockSearchJobs.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({});
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
     expect(result.items[0]).toMatchObject({ id: 1, title: 'Minimal Job' });
-    expect(result.items[0].sources).toBeUndefined();
+    expect(result.items[0]!.sources).toBeUndefined();
   });
 
   it('formats output completely', () => {
@@ -170,14 +172,16 @@ describe('reliefwebSearchJobs', () => {
       appliedFilters: {
         careerCategory: 'Logistics and Telecommunications',
         sort: 'date.created:desc',
+        preset: 'latest',
         limit: 10,
         offset: 0,
       },
     };
     const blocks = reliefwebSearchJobs.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('Applied filters:');
+    expect(text).toContain('preset=latest');
     expect(text).toContain('77777');
     expect(text).toContain('Field Coordinator');
     expect(text).toContain('WFP');
@@ -204,9 +208,9 @@ describe('reliefwebSearchJobs — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ sort: 'bogus.field:desc' });
 
-    const err = (await reliefwebSearchJobs
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchJobs.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
@@ -225,7 +229,7 @@ describe('reliefwebSearchJobs — offset past the end of the result set', () => 
   it('names the offset and the last reachable page instead of claiming no matches', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 640 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ offset: 9000, limit: 20 });
     await reliefwebSearchJobs.handler(input, ctx);
 
@@ -239,7 +243,7 @@ describe('reliefwebSearchJobs — offset past the end of the result set', () => 
   it('keeps the broaden-your-search notice when nothing actually matched', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ offset: 9000 });
     await reliefwebSearchJobs.handler(input, ctx);
 
@@ -256,7 +260,7 @@ describe('reliefwebSearchJobs — include_archived', () => {
   });
 
   it('sends preset=analysis to the service and echoes it on both surfaces', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ country: 'KEN', include_archived: true });
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
@@ -270,7 +274,7 @@ describe('reliefwebSearchJobs — include_archived', () => {
   });
 
   it('defaults to the open-postings preset when the flag is absent', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ country: 'KEN' });
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
@@ -282,7 +286,7 @@ describe('reliefwebSearchJobs — include_archived', () => {
   });
 
   it('offers the archive in the empty-result notice', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({ country: 'KEN' });
     await reliefwebSearchJobs.handler(input, ctx);
 

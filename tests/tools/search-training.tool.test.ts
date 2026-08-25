@@ -38,7 +38,7 @@ describe('reliefwebSearchTraining', () => {
     ];
     mockSearchTraining.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ format: 'on-site', limit: 5 });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -57,7 +57,7 @@ describe('reliefwebSearchTraining', () => {
   it('populates notice enrichment when no training matches', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       text: 'zzznomatch',
       format: 'online',
@@ -74,7 +74,7 @@ describe('reliefwebSearchTraining', () => {
   it('empty-result notice echoes source, career_category, language, and date_start_to', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       source: 'RedR',
       career_category: 'Logistics and Telecommunications',
@@ -93,7 +93,7 @@ describe('reliefwebSearchTraining', () => {
   it('echoes appliedFilters with normalized country and resolved sort', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ country: 'som', format: 'online' });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -109,7 +109,7 @@ describe('reliefwebSearchTraining', () => {
   it('threads an explicit sort into the service call and echoes it in appliedFilters', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ sort: 'date.start:desc' });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -128,7 +128,9 @@ describe('reliefwebSearchTraining', () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ text: 'wash' });
 
-    const err = await reliefwebSearchTraining.handler(input, ctx).catch((e: unknown) => e);
+    const err = await Promise.resolve(reliefwebSearchTraining.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(McpError);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
@@ -145,9 +147,9 @@ describe('reliefwebSearchTraining', () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ sort: 'bogus.field:desc' });
 
-    const err = (await reliefwebSearchTraining
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchTraining.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
@@ -157,7 +159,7 @@ describe('reliefwebSearchTraining', () => {
   it('passes date range filters correctly', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       date_start_from: '2024-06-01T00:00:00+00:00',
       date_start_to: '2024-12-31T00:00:00+00:00',
@@ -177,13 +179,13 @@ describe('reliefwebSearchTraining', () => {
     const items = [{ id: 1, title: 'Minimal Training' }];
     mockSearchTraining.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({});
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
     expect(result.items[0]).toMatchObject({ id: 1, title: 'Minimal Training' });
-    expect(result.items[0].dateStart).toBeUndefined();
-    expect(result.items[0].formats).toBeUndefined();
+    expect(result.items[0]!.dateStart).toBeUndefined();
+    expect(result.items[0]!.formats).toBeUndefined();
   });
 
   it('formats output completely', () => {
@@ -207,14 +209,16 @@ describe('reliefwebSearchTraining', () => {
       appliedFilters: {
         format: 'online',
         sort: 'date.start:asc',
+        preset: 'latest',
         limit: 10,
         offset: 0,
       },
     };
     const blocks = reliefwebSearchTraining.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('Applied filters:');
+    expect(text).toContain('preset=latest');
     expect(text).toContain('88888');
     expect(text).toContain('WASH Training');
     expect(text).toContain('UNICEF');
@@ -242,7 +246,7 @@ describe('reliefwebSearchTraining — default upcoming-start window', () => {
   });
 
   it('applies a current-timestamp lower bound when neither date bound is supplied', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ limit: 5 });
     await reliefwebSearchTraining.handler(input, ctx);
 
@@ -253,7 +257,7 @@ describe('reliefwebSearchTraining — default upcoming-start window', () => {
   });
 
   it('echoes the injected bound in appliedFilters and in content[]', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({});
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -263,18 +267,18 @@ describe('reliefwebSearchTraining — default upcoming-start window', () => {
   });
 
   it('injects no lower bound when the caller supplied only an upper bound', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       date_start_to: '2025-12-31T23:59:59+00:00',
     });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
-    expect(mockSearchTraining.mock.calls[0][0]).not.toHaveProperty('dateStartFrom');
+    expect(mockSearchTraining.mock.calls[0]![0]).not.toHaveProperty('dateStartFrom');
     expect(result.appliedFilters).not.toHaveProperty('dateStartFrom');
   });
 
   it('leaves an explicit lower bound alone', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ date_start_from: '2020-01-01' });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -291,7 +295,7 @@ describe('reliefwebSearchTraining — date normalization', () => {
   });
 
   it('resolves a bare date window to start-of-day and end-of-day', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       date_start_from: '2026-09-01',
       date_start_to: '2026-09-30',
@@ -321,7 +325,7 @@ describe('reliefwebSearchTraining — date normalization', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-06T12:34:56.789Z'));
     try {
-      const ctx = createMockContext();
+      const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
       const input = reliefwebSearchTraining.input.parse({ date_start_from: '', date_start_to: '' });
       const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -343,7 +347,7 @@ describe('reliefwebSearchTraining — offset past the end of the result set', ()
   it('names the offset and the last reachable page instead of claiming no matches', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 215 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ offset: 99999, limit: 10 });
     await reliefwebSearchTraining.handler(input, ctx);
 
@@ -357,7 +361,7 @@ describe('reliefwebSearchTraining — offset past the end of the result set', ()
   it('keeps the broaden-your-search notice when nothing actually matched', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ offset: 99999 });
     await reliefwebSearchTraining.handler(input, ctx);
 
@@ -374,7 +378,7 @@ describe('reliefwebSearchTraining — include_archived', () => {
   });
 
   it('sends preset=analysis to the service and echoes it on both surfaces', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ country: 'KEN', include_archived: true });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -388,7 +392,7 @@ describe('reliefwebSearchTraining — include_archived', () => {
   });
 
   it('defaults to the current-listings preset when the flag is absent', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ country: 'KEN' });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -398,7 +402,7 @@ describe('reliefwebSearchTraining — include_archived', () => {
   });
 
   it('drops the start-from-now bound, which would hide the archive it just unlocked', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ include_archived: true });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
@@ -408,7 +412,7 @@ describe('reliefwebSearchTraining — include_archived', () => {
   });
 
   it('honors an explicit lower bound even with the archive on', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       include_archived: true,
       date_start_from: '2015-01-01',
@@ -419,7 +423,7 @@ describe('reliefwebSearchTraining — include_archived', () => {
   });
 
   it('offers the archive in the empty-result notice', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ country: 'KEN' });
     await reliefwebSearchTraining.handler(input, ctx);
 

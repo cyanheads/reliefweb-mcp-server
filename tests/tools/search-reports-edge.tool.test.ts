@@ -22,7 +22,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('normalizes country code to uppercase', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ country: 'afg' });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -35,19 +35,19 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('strips whitespace-only text and does not forward it', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ text: '   ' });
     await reliefwebSearchReports.handler(input, ctx);
 
     // Whitespace-only text.trim() is falsy — should not include text key
-    const callArg = mockSearchReports.mock.calls[0][0];
+    const callArg = mockSearchReports.mock.calls[0]![0];
     expect(callArg).not.toHaveProperty('text');
   });
 
   it('passes pagination offset correctly', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 100 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ limit: 10, offset: 20 });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -60,7 +60,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('forwards disaster_id filter when provided', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ disaster_id: 55555 });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -73,7 +73,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('leaves include_archived out of the service call — reports have no archive', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ include_archived: true });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -84,7 +84,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('forwards raw filter object when provided', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const rawFilter = {
       operator: 'AND',
       conditions: [
@@ -101,7 +101,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('empty-result notice includes format filter when set', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       text: 'floods',
       format: 'Situation Report',
@@ -116,7 +116,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('empty-result notice echoes the full filter set (language, source, dates, disaster_id)', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       country: 'syr',
       disaster_id: 42,
@@ -139,7 +139,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('empty-result notice with no filters uses generic message', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({});
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -159,7 +159,7 @@ describe('reliefwebSearchReports — edge cases', () => {
   it('format: formats empty items list gracefully', () => {
     const output = { items: [], appliedFilters: defaultApplied };
     const blocks = reliefwebSearchReports.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     // Empty list — only the applied-filters line, no crash, no undefined.
     expect((blocks[0] as { text: string }).text).toBeDefined();
     expect((blocks[0] as { text: string }).text).not.toContain('undefined');
@@ -222,7 +222,7 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('resolves a bare date range to start-of-day and end-of-day before calling the service', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       date_from: '2026-07-01',
       date_to: '2026-07-31',
@@ -239,7 +239,7 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('echoes the resolved bounds in appliedFilters, not the raw input', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       date_from: '2026-07-01',
       date_to: '2026-07-31',
@@ -253,7 +253,7 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('renders the resolved bounds into content[] so both response paths agree', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ date_from: '2026-07-01' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -262,7 +262,7 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('keeps a datetime already in the accepted UTC form byte-identical', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ date_from: '2026-07-01T09:30:00+00:00' });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -273,7 +273,7 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('converts a non-UTC offset to the UTC instant ReliefWeb accepts', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ date_from: '2026-07-01T09:30:00+02:00' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
@@ -285,7 +285,7 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('converts a Z-suffixed datetime, which ReliefWeb rejects verbatim', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ date_from: '2026-07-01T00:00:00.500Z' });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -303,11 +303,11 @@ describe('reliefwebSearchReports — date normalization', () => {
   });
 
   it('accepts a blank date from form-based clients and treats it as omitted', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ date_from: '' });
     const result = await reliefwebSearchReports.handler(input, ctx);
 
-    expect(mockSearchReports.mock.calls[0][0]).not.toHaveProperty('dateFrom');
+    expect(mockSearchReports.mock.calls[0]![0]).not.toHaveProperty('dateFrom');
     expect(result.appliedFilters).not.toHaveProperty('dateFrom');
   });
 });
@@ -322,7 +322,7 @@ describe('reliefwebSearchReports — offset past the end of the result set', () 
   it('names the offset and the last reachable page instead of claiming no matches', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 1779 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       country: 'TUV',
       offset: 99999,
@@ -340,7 +340,7 @@ describe('reliefwebSearchReports — offset past the end of the result set', () 
   it('keeps the broaden-your-search notice when nothing actually matched', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ country: 'TUV', offset: 99999 });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -352,7 +352,7 @@ describe('reliefwebSearchReports — offset past the end of the result set', () 
   it('reports a last-page offset of 0 when the whole result set fits one page', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 5 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ offset: 50, limit: 10 });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -362,7 +362,7 @@ describe('reliefwebSearchReports — offset past the end of the result set', () 
   it('emits no notice at all when the page carries results', async () => {
     mockSearchReports.mockResolvedValue({ items: [{ id: 1, title: 'A' }], totalCount: 1779 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ offset: 0 });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -388,9 +388,9 @@ describe('reliefwebSearchReports — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ sort: 'bogus.field:desc' });
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
@@ -410,9 +410,9 @@ describe('reliefwebSearchReports — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ filter: { bogus: 'nope' } });
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
   });
@@ -425,9 +425,9 @@ describe('reliefwebSearchReports — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ text: 'floods' });
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error' });
@@ -440,9 +440,9 @@ describe('reliefwebSearchReports — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({});
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.data).toMatchObject({ reason: 'upstream_error' });
   });
@@ -477,9 +477,9 @@ describe('reliefwebSearchReports — auth and rate-limit statuses stay on upstre
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({});
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error' });
@@ -495,9 +495,9 @@ describe('reliefwebSearchReports — auth and rate-limit statuses stay on upstre
     const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({});
 
-    const err = (await reliefwebSearchReports
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.message).toBe('ReliefWeb API error while searching reports.');
     expect(err.data).toMatchObject({ reason: 'upstream_error' });

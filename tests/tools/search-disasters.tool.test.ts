@@ -36,7 +36,7 @@ describe('reliefwebSearchDisasters', () => {
     ];
     mockSearchDisasters.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ disaster_type: 'Earthquake', limit: 5 });
     const result = await reliefwebSearchDisasters.handler(input, ctx);
 
@@ -48,7 +48,7 @@ describe('reliefwebSearchDisasters', () => {
   it('echoes appliedFilters with normalized country and resolved defaults', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({
       country: 'tur',
       disaster_type: 'Earthquake',
@@ -71,7 +71,7 @@ describe('reliefwebSearchDisasters', () => {
   it('populates notice enrichment when no disasters match', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({
       text: 'zzznomatch',
       country: 'ZZZ',
@@ -90,7 +90,7 @@ describe('reliefwebSearchDisasters', () => {
   it('empty-result notice echoes glide and date range filters', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({
       glide: 'EQ-2023-000053-TUR',
       date_from: '2023-01-01T00:00:00+00:00',
@@ -112,7 +112,9 @@ describe('reliefwebSearchDisasters', () => {
     const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ text: 'quake' });
 
-    const err = await reliefwebSearchDisasters.handler(input, ctx).catch((e: unknown) => e);
+    const err = await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(McpError);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
@@ -123,13 +125,13 @@ describe('reliefwebSearchDisasters', () => {
     const items = [{ id: 1, name: 'Minimal Disaster' }];
     mockSearchDisasters.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ limit: 1 });
     const result = await reliefwebSearchDisasters.handler(input, ctx);
 
     expect(result.items[0]).toMatchObject({ id: 1, name: 'Minimal Disaster' });
-    expect(result.items[0].dateCreated).toBeUndefined();
-    expect(result.items[0].types).toBeUndefined();
+    expect(result.items[0]!.dateCreated).toBeUndefined();
+    expect(result.items[0]!.types).toBeUndefined();
   });
 
   it('formats output including dateCreated and all types', () => {
@@ -158,7 +160,7 @@ describe('reliefwebSearchDisasters', () => {
       },
     };
     const blocks = reliefwebSearchDisasters.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('Applied filters:');
     expect(text).toContain('55555');
@@ -187,9 +189,9 @@ describe('reliefwebSearchDisasters — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ sort: 'bogus.field:desc' });
 
-    const err = (await reliefwebSearchDisasters
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
@@ -207,7 +209,7 @@ describe('reliefwebSearchDisasters — date normalization', () => {
   });
 
   it('resolves a bare date range to start-of-day and end-of-day on both surfaces', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({
       date_from: '2023-01-01',
       date_to: '2023-12-31',
@@ -245,7 +247,7 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
   });
 
   it('canonicalizes a capitalized status on the service call and both echo surfaces', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ status: 'Ongoing' });
     const result = await reliefwebSearchDisasters.handler(input, ctx);
 
@@ -259,7 +261,7 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
   });
 
   it('keeps comma-separated multi-value working, canonicalizing each token', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ status: 'ongoing,alert' });
     const result = await reliefwebSearchDisasters.handler(input, ctx);
 
@@ -271,7 +273,7 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
   });
 
   it('tolerates whitespace around each token of a multi-value status', async () => {
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ status: ' PAST , Alert-Archive ' });
     const result = await reliefwebSearchDisasters.handler(input, ctx);
 
@@ -286,9 +288,9 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
     const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ status: 'archive' });
 
-    const err = (await reliefwebSearchDisasters
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err).toBeInstanceOf(McpError);
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
@@ -303,9 +305,9 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
     const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ status: 'ongoing,current' });
 
-    const err = (await reliefwebSearchDisasters
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.data).toMatchObject({ reason: 'unknown_status' });
     expect(err.message).toContain('"current"');
@@ -317,9 +319,9 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
     const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ status: 'nonsense' });
 
-    const err = (await reliefwebSearchDisasters
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect((err.data as { recovery: { hint: string } }).recovery.hint).toContain(
       'include_archived',
@@ -337,7 +339,7 @@ describe('reliefwebSearchDisasters — offset past the end of the result set', (
   it('names the offset and the last reachable page instead of claiming no matches', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 137 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ offset: 5000, limit: 25 });
     await reliefwebSearchDisasters.handler(input, ctx);
 
@@ -351,7 +353,7 @@ describe('reliefwebSearchDisasters — offset past the end of the result set', (
   it('keeps the broaden-your-search notice when nothing actually matched', async () => {
     mockSearchDisasters.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
     const input = reliefwebSearchDisasters.input.parse({ offset: 5000 });
     await reliefwebSearchDisasters.handler(input, ctx);
 

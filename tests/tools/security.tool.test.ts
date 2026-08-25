@@ -77,6 +77,21 @@ describe('security: input handling across search tools', () => {
     ['list_sources', reliefwebListSources, mockListSources],
   ] as const;
 
+  /**
+   * `it.each` widens the tuple to a union of definitions, so TypeScript pairs one member's
+   * parsed input against every member's handler and asks for their intersection. The runtime
+   * pairing is intact — `input` and `handler` come from the same element — so the call goes
+   * through an alias that drops the unsatisfiable correlation.
+   */
+  const callTextTool = (
+    def: (typeof TEXT_TOOLS)[number][1],
+    input: unknown,
+    ctx: unknown,
+  ): Promise<unknown> =>
+    Promise.resolve(
+      (def.handler as (i: unknown, c: unknown) => unknown)(input, ctx),
+    ) as Promise<unknown>;
+
   it.each(TEXT_TOOLS)(
     '%s: forwards every injection string to the service byte-identical',
     async (_l, def, mock) => {
@@ -84,7 +99,7 @@ describe('security: input handling across search tools', () => {
         mock.mockClear();
         const ctx = createMockContext();
         const input = def.input.parse({ text: str });
-        await def.handler(input, ctx);
+        await callTextTool(def, input, ctx);
 
         expect(mock).toHaveBeenCalledWith(expect.objectContaining({ text: str }), ctx);
       }
@@ -98,7 +113,7 @@ describe('security: input handling across search tools', () => {
       for (const str of INJECTION_STRINGS) {
         const ctx = createMockContext();
         const input = def.input.parse({ text: str });
-        const result = await def.handler(input, ctx);
+        const result = await callTextTool(def, input, ctx);
 
         expect((result as { appliedFilters: { text?: string } }).appliedFilters.text).toBe(str);
       }
@@ -108,9 +123,9 @@ describe('security: input handling across search tools', () => {
   it.each(TEXT_TOOLS)('%s: forwards an oversized text input whole', async (_l, def, mock) => {
     const ctx = createMockContext();
     const input = def.input.parse({ text: OVERSIZED_INPUT });
-    await def.handler(input, ctx);
+    await callTextTool(def, input, ctx);
 
-    const forwarded = (mock.mock.calls[0][0] as { text: string }).text;
+    const forwarded = (mock.mock.calls[0]![0] as { text: string }).text;
     expect(forwarded).toHaveLength(OVERSIZED_INPUT.length);
     expect(forwarded).toBe(OVERSIZED_INPUT);
   });
@@ -204,7 +219,7 @@ describe('security: tool outputs do not leak env values', () => {
   it('search_reports: empty-result notice echoes the query without env-style tokens', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({ text: 'test' });
     await reliefwebSearchReports.handler(input, ctx);
 
@@ -218,7 +233,7 @@ describe('security: tool outputs do not leak env values', () => {
   it('search_reports: offset-past-the-end notice carries only counts, no caller strings', async () => {
     mockSearchReports.mockResolvedValue({ items: [], totalCount: 1775 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
     const input = reliefwebSearchReports.input.parse({
       text: '<script>alert(document.cookie)</script>',
       offset: 99999,
@@ -309,6 +324,7 @@ describe('security: format() output does not expose internal state', () => {
 
   it('get_country: format output contains no env-style tokens', () => {
     const output = {
+      kind: 'full' as const,
       id: 1,
       name: 'Afghanistan',
       iso3: 'AFG',
@@ -323,6 +339,7 @@ describe('security: format() output does not expose internal state', () => {
 
   it('get_report: format output contains no env-style tokens', () => {
     const output = {
+      kind: 'full' as const,
       id: 1,
       title: 'Report',
       body: '<p>Content.</p>',
@@ -335,6 +352,7 @@ describe('security: format() output does not expose internal state', () => {
 
   it('get_disaster: format output contains no env-style tokens', () => {
     const output = {
+      kind: 'full' as const,
       id: 1,
       name: 'Test Disaster',
       status: 'current',

@@ -32,7 +32,7 @@ describe('reliefwebListSources', () => {
     ];
     mockListSources.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({ text: 'UNHCR' });
     const result = await reliefwebListSources.handler(input, ctx);
 
@@ -44,7 +44,7 @@ describe('reliefwebListSources', () => {
   it('passes type filter correctly', async () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({
       type: 'Non-governmental Organization',
       limit: 20,
@@ -67,7 +67,7 @@ describe('reliefwebListSources', () => {
   it('populates notice enrichment echoing type and text when no sources match', async () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({
       text: 'zzz',
       type: 'Academic and Research Institution',
@@ -88,7 +88,7 @@ describe('reliefwebListSources', () => {
       totalCount: 1,
     });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({ text: 'UNHCR' });
     await reliefwebListSources.handler(input, ctx);
 
@@ -103,7 +103,9 @@ describe('reliefwebListSources', () => {
     const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({ type: 'International Organization' });
 
-    const err = await reliefwebListSources.handler(input, ctx).catch((e: unknown) => e);
+    const err = await Promise.resolve(reliefwebListSources.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBeInstanceOf(McpError);
     expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
@@ -114,13 +116,13 @@ describe('reliefwebListSources', () => {
     const items = [{ id: 999, name: 'Minimal Source' }];
     mockListSources.mockResolvedValue({ items, totalCount: 1 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({});
     const result = await reliefwebListSources.handler(input, ctx);
 
     expect(result.items[0]).toMatchObject({ id: 999, name: 'Minimal Source' });
-    expect(result.items[0].shortname).toBeUndefined();
-    expect(result.items[0].url).toBeUndefined();
+    expect(result.items[0]!.shortname).toBeUndefined();
+    expect(result.items[0]!.url).toBeUndefined();
   });
 
   it('formats output including id and url for each item', () => {
@@ -144,7 +146,7 @@ describe('reliefwebListSources', () => {
       ],
     };
     const blocks = reliefwebListSources.format!(output);
-    expect(blocks[0].type).toBe('text');
+    expect(blocks[0]!.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('1111');
     expect(text).toContain('UNHCR');
@@ -184,9 +186,9 @@ describe('reliefwebListSources — upstream error contract', () => {
     const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({ text: 'WFP' });
 
-    const err = (await reliefwebListSources
-      .handler(input, ctx)
-      .catch((e: unknown) => e)) as McpError;
+    const err = (await Promise.resolve(reliefwebListSources.handler(input, ctx)).catch(
+      (e: unknown) => e,
+    )) as McpError;
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
@@ -205,7 +207,7 @@ describe('reliefwebListSources — offset past the end of the result set', () =>
   it('names the offset and the last reachable page instead of claiming no matches', async () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 7031 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({ offset: 99999, limit: 100 });
     await reliefwebListSources.handler(input, ctx);
 
@@ -219,7 +221,7 @@ describe('reliefwebListSources — offset past the end of the result set', () =>
   it('keeps the broaden-your-search notice when nothing actually matched', async () => {
     mockListSources.mockResolvedValue({ items: [], totalCount: 0 });
 
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: reliefwebListSources.errors });
     const input = reliefwebListSources.input.parse({ text: 'zzznomatch' });
     await reliefwebListSources.handler(input, ctx);
 

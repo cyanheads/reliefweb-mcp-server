@@ -113,9 +113,9 @@ describe('reportResource', () => {
   it('names the rejected ID and what a valid one looks like', async () => {
     const ctx = createMockContext({ uri: new URL('reliefweb://reports/4221539junk') });
 
-    const err = (await reportResource
-      .handler({ id: '4221539junk' }, ctx)
-      .catch((e: unknown) => e)) as Error;
+    const err = (await Promise.resolve(reportResource.handler({ id: '4221539junk' }, ctx)).catch(
+      (e: unknown) => e,
+    )) as Error;
 
     expect(err.message).toContain('4221539junk');
     expect(err.message).toContain('digits only');
@@ -124,9 +124,9 @@ describe('reportResource', () => {
   it('rejects a zero-padded ID, naming the leading zero as the reason', async () => {
     const ctx = createMockContext({ uri: new URL('reliefweb://reports/004221539') });
 
-    const err = (await reportResource
-      .handler({ id: '004221539' }, ctx)
-      .catch((e: unknown) => e)) as Error & { code?: number };
+    const err = (await Promise.resolve(reportResource.handler({ id: '004221539' }, ctx)).catch(
+      (e: unknown) => e,
+    )) as Error & { code?: number };
 
     expect(err.code).toBe(VALIDATION_CODE);
     expect(err.message).toContain('leading zero');
@@ -188,9 +188,9 @@ describe('reportResource', () => {
   it('rejects an all-digit ID past the exact-integer range instead of querying a rounded one', async () => {
     const ctx = createMockContext({ uri: new URL('reliefweb://reports/9007199254740993') });
 
-    const err = (await reportResource
-      .handler({ id: '9007199254740993' }, ctx)
-      .catch((e: unknown) => e)) as Error & { code?: number };
+    const err = (await Promise.resolve(
+      reportResource.handler({ id: '9007199254740993' }, ctx),
+    ).catch((e: unknown) => e)) as Error & { code?: number };
 
     expect(err.code).toBe(VALIDATION_CODE);
     expect(err.message).toContain('9007199254740993');
@@ -202,9 +202,9 @@ describe('reportResource', () => {
     const oversized = '9'.repeat(1000);
     const ctx = createMockContext({ uri: new URL('reliefweb://reports/x') });
 
-    const err = (await reportResource
-      .handler({ id: oversized }, ctx)
-      .catch((e: unknown) => e)) as Error & { code?: number };
+    const err = (await Promise.resolve(reportResource.handler({ id: oversized }, ctx)).catch(
+      (e: unknown) => e,
+    )) as Error & { code?: number };
 
     expect(err.code).toBe(VALIDATION_CODE);
     expect(mockGetReport).not.toHaveBeenCalled();
