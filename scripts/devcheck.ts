@@ -294,9 +294,15 @@ const DIRECT_DEPS: ReadonlySet<string> = (() => {
  * direct (in our package.json) or upstream (transitive dependency we can't fix).
  *
  * Bun audit format per vulnerability block:
- *   <package>  <version-range>        ← header (no indent, 2+ spaces before range)
- *     <parent> › <child> [› ...]      ← dependency path (indented, › = transitive)
+ *   <package>  <version-range>        ← header, Bun <=1.3 (no indent, 2+ spaces before range)
+ *   <package>@<version-range>         ← header, Bun >=1.4 (no indent, @ before range)
+ *     <parent> › <child> [› ...]      ← dependency path (indented, separator = transitive)
  *     <severity>: <description>       ← advisory (indented)
+ *
+ * Bun 1.4 changed both the header shape and the dependency-path separator (› → >).
+ * Both spellings are accepted so the classifier reads either runtime's output; a
+ * header that parses under neither leaves the block unclassified, which surfaces as
+ * a null return and a conservative failure rather than a silent pass.
  *
  * Returns null if parsing yields no results (caller should fall back to default behavior).
  */
@@ -308,8 +314,11 @@ function classifyAuditVulns(output: string): { direct: string[]; upstream: strin
     let i = 0;
 
     while (i < lines.length) {
-      // Package header: non-indented, name followed by 2+ spaces then version constraint
-      const pkgMatch = lines[i]?.match(/^([@\w][\w./-]*)\s{2,}(.+)$/);
+      // Package header: non-indented, name followed by the version constraint —
+      // separated by 2+ spaces (Bun <=1.3) or by `@` (Bun >=1.4).
+      const line = lines[i] ?? '';
+      const pkgMatch =
+        line.match(/^([@\w][\w./-]*)\s{2,}(.+)$/) ?? line.match(/^(@?[\w][\w./-]*)@([^\s].*)$/);
       if (!pkgMatch) {
         i++;
         continue;
@@ -334,14 +343,14 @@ function classifyAuditVulns(output: string): { direct: string[]; upstream: strin
 
       if (!hasHighCritical) continue;
 
-      // Direct if: the vulnerable package is in our package.json,
-      // or any dependency path lacks › (meaning it's not pulled in transitively)
+      // Direct if: the vulnerable package is in our package.json, or any dependency
+      // path carries no separator (meaning it's not pulled in transitively)
       const pkgName = pkg ?? '';
-      const isDirect = DIRECT_DEPS.has(pkgName) || paths.some((p) => !p.includes('\u203a'));
+      const isDirect = DIRECT_DEPS.has(pkgName) || paths.some((p) => !/[\u203a>]/.test(p));
       if (isDirect) {
         direct.push(`${pkgName} ${versionRange}`);
       } else {
-        const via = paths[0]?.split(/\s*\u203a\s*/)[0] ?? 'unknown';
+        const via = paths[0]?.split(/\s*[\u203a>]\s*/)[0] ?? 'unknown';
         upstream.push(`${pkgName} ${versionRange} (via ${via})`);
       }
     }
