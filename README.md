@@ -27,9 +27,11 @@
 
 ---
 
-## Tools
+## Overview
 
-11 tools for working with ReliefWeb humanitarian data:
+Humanitarian reports, disasters, jobs, training opportunities, and country profiles from ReliefWeb, OCHA's information hub for crisis response. Search, fetch, and page through all six ReliefWeb content types from any MCP client. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+
+### Tools
 
 | Tool | Description |
 |:---|:---|
@@ -45,118 +47,93 @@
 | `reliefweb_get_training` | Fetch a training listing by numeric ID with the full description, registration instructions, and cost detail |
 | `reliefweb_list_sources` | Browse contributing organizations by name and type |
 
-### Oversized records
+### Resources
 
-The five `reliefweb_get_*` tools never truncate. Under a fixed byte budget they return the record whole; over it they return a complete section outline — every section, its real serialized size, and how to reach it — and a `sections: [...]` re-call returns exactly the named sections plus identity metadata. The re-call is self-contained: the record is re-fetched from its ID and sliced, so nothing has to be replayed. Both modes carry the same information in `structuredContent` and `content[]`.
+| Resource | Description |
+|:---|:---|
+| `reliefweb://reports/{id}` | Full report record by numeric ID — metadata, body text, and file URLs. The ID segment must be digits only |
+| `reliefweb://disasters/{id}` | Disaster record by numeric ID — type, status, GLIDE, description, and content links. The ID segment must be digits only |
+| `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, and active response plans |
 
-The resources always return the whole record — a resource read has no way to name sections, so reach for the tool when a record is too large.
+### Prompts
 
-### Curated-profile archives
+| Prompt | Description |
+|:---|:---|
+| `reliefweb_crisis_briefing` | Generate a structured humanitarian briefing for a country or disaster |
 
-A country or disaster profile returns only what ReliefWeb currently curates in each of its three link lists. Each list also has an archive, thousands of entries deep for a long-running crisis — Syria carries 2,328 archived key content links and 120 archived appeals and response plans. `reliefweb_get_country` and `reliefweb_get_disaster` page that archive on request:
+## Capability reference
 
-```jsonc
-{ "iso3": "SYR", "archive": { "list": "keyContent", "offset": 0, "limit": 25 } }
-```
+### `reliefweb_search_reports` <sub>tool</sub>
 
-The response replaces the profile with one page: the list it came from, the true total, how many entries it holds, its offset, the entries, and the next offset while more remain — absent once the page reaches the end. Lists are `keyContent`, `appealsResponsePlans`, and `usefulLinks`, named for the fields the active half lands on.
-
-`sections` and `archive` are alternative modes and a call carrying both is rejected: `sections` slices the record, `archive` replaces it with a page. A record over the response budget still answers an archive call with the page — a page is bounded by `limit` and carries no record prose, so it never outlines.
-
-### `reliefweb_search_reports`
-
-Search humanitarian reports on ReliefWeb with rich filtering.
-
-- Full-text search across title, body, and key metadata fields
-- Filtering by country (ISO3), disaster ID, format, theme, language, and source organization
-- Date range filtering on source publication date — a bare `2024-01-15` is accepted alongside full ISO 8601
-- Raw filter object for compound conditions not covered by named params
-- Pagination via offset and limit (up to 1,000 per call)
+- Full-text query plus filters: country (ISO3), disaster ID, format, theme, language (ISO 639-1), and source shortname
+- Date range filtering on source publication date (`date_from`/`date_to`) — a bare `2024-01-15` works alongside full ISO 8601
 - Format is a closed set: `News and Press Release`, `Situation Report`, `Map`, `Infographic`, `Analysis`, `Other`, `Assessment`, `Manual and Guideline`, `Appeal`, `UN Document`, `Evaluation and Lessons Learned` — matched ignoring case, spacing, and punctuation; anything else is rejected with the list
-- `include_archived` has no effect here — reports have no archived class, so all of them are in scope by default
-- Returns paginated summaries — use `reliefweb_get_report` to fetch full body text
-- Rate limit: 1,000 calls/day
+- Raw `filter` object for compound conditions the named params don't cover
+- Pagination via `offset`/`limit`, up to 1,000 per call (default 10)
+- `include_archived` has no effect — reports carry no archived class, so every report is already in scope
 
 ---
 
-### `reliefweb_get_report`
-
-Fetch a single ReliefWeb report by its numeric ID with full body text.
+### `reliefweb_get_report` <sub>tool</sub>
 
 - Full body HTML, all metadata, and file attachment URLs
-- Use after `reliefweb_search_reports` to retrieve document content (10–100KB each)
+- Use after `reliefweb_search_reports` to retrieve content — bodies run 10–100KB
 - Over the response budget, returns a section outline instead; `sections: ["body"]` pulls the body back on its own
 - Returns structured `not_found` when the ID doesn't exist
 
 ---
 
-### `reliefweb_search_disasters`
+### `reliefweb_search_disasters` <sub>tool</sub>
 
-Search active and historical disasters on ReliefWeb.
-
-- Filtering by disaster type (Earthquake, Flood, Cyclone, etc.), country, and status
-- GLIDE number lookup for cross-system disaster correlation
-- Date range filtering on disaster creation date — a bare `2024-01-15` is accepted alongside full ISO 8601
-- Status values: `alert`, `ongoing`, `past`, `alert-archive`; multiple values comma-separated, matched ignoring case, spacing, and punctuation
-- Optional `include_archived=true` to reach `alert-archive` entries, which the default preset hides
-- Returns IDs for use with `reliefweb_get_disaster` and as `disaster_id` filter in `reliefweb_search_reports`
+- Filtering by disaster type, country, status, and GLIDE number for cross-system correlation
+- Date range filtering on disaster creation date (`date_from`/`date_to`) — a bare `2024-01-15` works alongside full ISO 8601
+- Status is a closed set: `alert`, `ongoing`, `past`, `alert-archive`; comma-separate for multiple, matched ignoring case, spacing, and punctuation
+- `alert-archive` is reachable only with `include_archived=true` — the default preset hides it
+- Pagination via `offset`/`limit`, up to 1,000 per call (default 10)
+- Returns IDs for `reliefweb_get_disaster` and as the `disaster_id` filter in `reliefweb_search_reports`
 
 ---
 
-### `reliefweb_get_disaster`
-
-Fetch a disaster record by ReliefWeb numeric ID with full details.
+### `reliefweb_get_disaster` <sub>tool</sub>
 
 - Full description, profile overview, affected countries, and GLIDE number
-- Currently-active curated key content links from the ReliefWeb editorial team (the present set, not the full archive)
-- Currently-active appeals and response plans linked to the disaster
-- Currently-active useful external links curated by ReliefWeb editors
-- Major disasters run to tens of KB of prose; over the response budget the record comes back as a section outline, and `sections: ["description"]` or `sections: ["profileOverview"]` pulls one narrative at a time
-- `archive: { list: "keyContent" }` pages the archived entries each curated list leaves out
+- Three curated lists — `keyContent`, `appealsResponsePlans`, `usefulLinks` — each returns only its currently-active entries; archived entries page via `archive: { list: <name> }`
+- Major disasters run to tens of KB; over the response budget the record becomes a section outline, and `sections: ["description"]` or `["profileOverview"]` pulls one narrative at a time
+- `sections` and `archive` are alternative modes — a call supplying both is rejected
+- Returns structured `not_found` when the ID doesn't exist
 
 ---
 
-### `reliefweb_get_country`
-
-Fetch a country profile from ReliefWeb by ISO3 code.
+### `reliefweb_get_country` <sub>tool</sub>
 
 - Situation overview text curated by OCHA editors
-- Currently-active key content links maintained by ReliefWeb editors (the present curated set, not the full archive)
-- Currently-active humanitarian appeals and response plans
-- Currently-active useful external links for the country
-- Country profiles are the authoritative situation summary for humanitarian responders
-- `archive: { list: "keyContent" }` pages the archived entries each curated list leaves out — 2,328 of them for Syria
-- Carries the same outline-and-`sections` behavior as the other detail tools, though an active-only profile is small enough that it rarely reaches the budget
+- Three curated lists — `keyContent`, `appealsResponsePlans`, `usefulLinks` — each returns only its currently-active entries; archived entries (thousands deep for a long-running crisis) page via `archive: { list: <name> }`
+- `sections` and `archive` are alternative modes — a call supplying both is rejected
+- Carries the same section-outline behavior as the other detail tools, though an active-only profile is small enough that it rarely reaches the budget
+- Use `reliefweb_list_countries` to discover valid ISO3 codes
+- Returns structured `not_found` for an unknown ISO3 code
 
 ---
 
-### `reliefweb_list_countries`
-
-List all countries and territories tracked by ReliefWeb.
+### `reliefweb_list_countries` <sub>tool</sub>
 
 - Optional `crisis_only=true` to limit to active humanitarian situations (status ongoing)
 - Returns ISO3 codes, status, and canonical URLs — use ISO3 with `reliefweb_get_country`
-- Pagination up to 1,000 entries per call
+- Pagination up to 1,000 entries per call (default 100)
 
 ---
 
-### `reliefweb_search_jobs`
+### `reliefweb_search_jobs` <sub>tool</sub>
 
-Search humanitarian job listings on ReliefWeb.
-
-- Filtering by country, organization short name, career category, theme, and experience level
-- Career category values: Programme and Project Management, Information and Communications Technology, Logistics and Telecommunications, and others
-- Returns current open positions — expired postings excluded by default
-- Optional `include_archived=true` to search expired postings too; the archive dwarfs the open set, so use it for labour-market history rather than a hiring snapshot
+- Filtering by country, organization shortname, career category, theme, and experience level
+- Returns current open postings by default; `include_archived=true` reaches the closed archive, far larger than the open set
 - Sortable by newest posting (`date.created:desc`, default) or soonest closing (`date.closing:asc`)
-- Pagination with closing date and canonical URL per listing
-- Returns IDs for use with `reliefweb_get_job`
+- Pagination via `offset`/`limit`, up to 1,000 per call (default 10)
+- Returns IDs for `reliefweb_get_job`
 
 ---
 
-### `reliefweb_get_job`
-
-Fetch a job posting by ReliefWeb numeric ID with everything needed to evaluate and apply.
+### `reliefweb_get_job` <sub>tool</sub>
 
 - Full vacancy description and application instructions — neither is in search results
 - Posting status, indexed / closing / last-modified dates, hiring organization, countries, career category, experience level, and job type
@@ -167,77 +144,84 @@ Fetch a job posting by ReliefWeb numeric ID with everything needed to evaluate a
 
 ---
 
-### `reliefweb_search_training`
+### `reliefweb_search_training` <sub>tool</sub>
 
-Search humanitarian training and learning opportunities.
-
-- Covers on-site and online capacity-building events
-- Filtering by country, source, format, career category, and language
-- Date range filtering on training start date (`date_start_from` / `date_start_to`) — a bare `2024-06-01` is accepted alongside full ISO 8601
-- Scoped to training starting from now when neither bound is given; supply either one to search an explicit range, including a historical one
-- Optional `include_archived=true` to search concluded listings too; it also drops the start-from-now default bound, so an otherwise unbounded search reaches the whole record
-- Ordered by soonest start date by default (`date.start:asc`); override with `sort`
-- Distinct from report date fields — uses `date.start` / `date.end`
-- Returns IDs for use with `reliefweb_get_training`
+- Filtering by country, source, format (`on-site` or `online`), career category, and language
+- Date range filtering on training start date (`date_start_from`/`date_start_to`) — a bare `2024-06-01` works alongside full ISO 8601
+- Scoped to training starting from now when neither date bound is given; supply either one for an explicit range, including a historical one
+- `include_archived=true` reaches concluded listings and drops the start-from-now default, so an otherwise unbounded search reaches the whole record
+- Ordered by soonest start date by default (`date.start:asc`, distinct from report date fields); override with `sort`
+- Returns IDs for `reliefweb_get_training`
 
 ---
 
-### `reliefweb_get_training`
-
-Fetch a training listing by ReliefWeb numeric ID with everything needed to evaluate and register.
+### `reliefweb_get_training` <sub>tool</sub>
 
 - Full description and registration instructions — neither is in search results
-- Cost class and the organizer's fee detail, plus the organizer's own event URL
-- Listing status, start / end / registration / indexed dates, host cities, format, type, listing and delivery languages, and organizing source
-- Both canonical URLs (the readable alias and the node URL)
+- Cost class, the organizer's fee detail, and the organizer's own event URL
+- Listing status, start / end / registration / indexed dates, host cities, format, type, listing and delivery languages, organizing source, and both canonical URLs
 - Reaches concluded listings as well as current ones
 - Over the response budget, returns a section outline; `sections: ["cost", "feeInformation", "howToRegister"]` pulls just the practicalities
 - Returns structured `not_found` pointing back at `reliefweb_search_training`
 
 ---
 
-### `reliefweb_list_sources`
+### `reliefweb_list_sources` <sub>tool</sub>
 
-Browse organizations that contribute content to ReliefWeb.
-
-- Optional filtering by name text or organization type (Government, International Organization, Non-governmental Organization, Academic and Research Institution, Media, Red Cross/Red Crescent Movement, Other)
+- Optional filtering by name text or organization `type`: `Government`, `International Organization`, `Non-governmental Organization`, `Academic and Research Institution`, `Media`, `Red Cross/Red Crescent Movement`, `Other`
 - Returns short names, types, organization URLs, and homepage URLs
+- Pagination via `offset`/`limit`, up to 1,000 per call (default 10)
 - Use `shortname` with the `source` filter in `reliefweb_search_reports`, `reliefweb_search_jobs`, and `reliefweb_search_training`
 
-## Resources and prompt
+---
 
-| Type | Name | Description |
-|:---|:---|:---|
-| Resource | `reliefweb://reports/{id}` | Full report record by numeric ID — metadata, body text, and file URLs. The ID segment must be digits only |
-| Resource | `reliefweb://disasters/{id}` | Disaster record by numeric ID — type, status, GLIDE, description, and content links. The ID segment must be digits only |
-| Resource | `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, and active response plans |
-| Prompt | `reliefweb_crisis_briefing` | Generate a structured humanitarian briefing for a country or disaster |
+### `reliefweb://reports/{id}` <sub>resource</sub>
+
+- Full report record as `application/json` — metadata, body text, and file URLs
+- `id` must be digits only, exactly as search returned it
+- Always returns the whole record — no section selector; use `reliefweb_get_report` for an oversized report
+
+---
+
+### `reliefweb://disasters/{id}` <sub>resource</sub>
+
+- Disaster record as `application/json` — type, status, GLIDE, description, and curated content links
+- `id` must be digits only, exactly as search returned it
+- Always returns the whole record — no section selector; use `reliefweb_get_disaster` for an oversized disaster or to page an archive
+
+---
+
+### `reliefweb://countries/{iso3}` <sub>resource</sub>
+
+- Country profile as `application/json` — overview, situation summary, and active response plans
+- Equivalent to calling `reliefweb_get_country`
+- `iso3` must be a 3-letter ISO 3166-1 alpha-3 code
+
+---
+
+### `reliefweb_crisis_briefing` <sub>prompt</sub>
+
+- Arguments: `country_or_disaster` required (name, ISO3 code, or GLIDE number); `focus` optional — `situation`, `jobs`, or `full` (default)
+- Returns one user message instructing the agent to gather data with the ReliefWeb tools, then synthesize a briefing citing report titles and dates
 
 ## Features
 
-Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core):
-
-- Declarative tool definitions — single file per tool, framework handles registration and validation
-- Unified error handling across all tools
-- Pluggable auth (`none`, `jwt`, `oauth`)
-- Swappable storage backends: `in-memory`, `filesystem`, `Supabase`, `Cloudflare KV/R2/D1`
-- Structured logging with optional OpenTelemetry tracing
-- Runs locally (stdio/HTTP) or on Cloudflare Workers from the same codebase
+Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): stdio and Streamable HTTP transports, pluggable auth (`none` / `jwt` / `oauth`), swappable storage (`in-memory`, `filesystem`, `Supabase`, `Cloudflare KV/R2/D1`), structured logging with optional OpenTelemetry tracing.
 
 ReliefWeb-specific:
 
-- Full coverage of six ReliefWeb content types: reports, disasters, countries, jobs, training, sources
+- Full coverage of all six ReliefWeb content types: reports, disasters, countries, jobs, training, and sources
 - Compound filter builder supporting nested AND/OR conditions for the ReliefWeb API v2
-- `RELIEFWEB_APP_NAME` validated at startup (required by the API since November 2025)
-- 1,000 calls/day quota awareness — prominently documented on each tool
+- Vocabulary matching for `format` and `status` filters normalizes case, spacing, and punctuation instead of requiring exact ReliefWeb spelling
+- `RELIEFWEB_APP_NAME` validated at startup — required by the API since November 2025
+- 1,000 calls/day API quota, surfaced in each search and list tool's upstream-error recovery text
 
 Agent-friendly output:
 
 - Body text excluded from search results by design — agents fetch it explicitly with the matching `reliefweb_get_*` tool to control context budget
-- Oversized records outline rather than truncate, with a section selector to retrieve what's needed
-- Curated-profile archives are paged rather than dropped, with honest totals and a next offset
-- Recovery hints on empty results — echoes applied filters and suggests how to broaden
-- Typed `not_found` error contracts on get-by-ID tools with actionable recovery text
+- Oversized records outline rather than truncate, with a section selector to retrieve exactly what's needed
+- Curated-profile archives are paged rather than dropped, with honest totals and a next offset while more remain
+- Typed `not_found` error contracts and empty-result notices that echo applied filters and suggest how to broaden
 
 ## Getting started
 
@@ -301,6 +285,25 @@ Or with npx (no Bun required):
 }
 ```
 
+Or with Docker:
+
+```json
+{
+  "mcpServers": {
+    "reliefweb-mcp-server": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MCP_TRANSPORT_TYPE=stdio",
+        "-e", "RELIEFWEB_APP_NAME=your-app-name",
+        "ghcr.io/cyanheads/reliefweb-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
 For Streamable HTTP, set the transport and start the server:
 
 ```sh
@@ -328,9 +331,14 @@ cd reliefweb-mcp-server
 bun install
 ```
 
-## Configuration
+4. **Configure environment:**
 
-All configuration is validated at startup via Zod schemas. Key environment variables:
+```sh
+cp .env.example .env
+# edit .env and set RELIEFWEB_APP_NAME
+```
+
+## Configuration
 
 | Variable | Description | Default |
 |:---|:---|:---|
@@ -340,12 +348,14 @@ All configuration is validated at startup via Zod schemas. Key environment varia
 | `MCP_HTTP_ENDPOINT_PATH` | HTTP endpoint path where the MCP server is mounted | `/mcp` |
 | `MCP_PUBLIC_URL` | Public origin override for TLS-terminating reverse-proxy deployments | none |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth` | `none` |
-| `MCP_SESSION_MODE` | HTTP session handling: `stateless`, `stateful`, or `auto`. Shipped as `stateless` — no handler needs a session. | `auto` (resolves to `stateful`) |
+| `MCP_SESSION_MODE` | HTTP session handling: `stateless`, `stateful`, or `auto` (which resolves to `stateful`). The server declares `stateless` in `src/index.ts` — no handler needs a session — so set this only to override. | `stateless` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, etc.) | `info` |
 | `MCP_GC_PRESSURE_INTERVAL_MS` | Opt-in Bun-only forced-GC pressure loop (ms). Try `60000` if heap growth is observed under sustained HTTP load. | `0` (disabled) |
 | `LOGS_DIR` | Directory for log files (Node.js only). | `<project-root>/logs` |
 | `STORAGE_PROVIDER_TYPE` | Storage backend: `in-memory`, `filesystem`, `supabase`, `cloudflare-kv/r2/d1` | `in-memory` |
 | `OTEL_ENABLED` | Enable OpenTelemetry | `false` |
+
+See [`.env.example`](./.env.example) for the full list of optional overrides.
 
 ## Running the server
 
@@ -369,6 +379,15 @@ All configuration is validated at startup via Zod schemas. Key environment varia
   bun run test      # Runs the test suite
   ```
 
+### Docker
+
+```sh
+docker build -t reliefweb-mcp-server .
+docker run --rm -e RELIEFWEB_APP_NAME=your-app-name -p 3010:3010 reliefweb-mcp-server
+```
+
+The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/reliefweb-mcp-server`. OpenTelemetry peer dependencies are installed by default — build with `--build-arg OTEL_ENABLED=false` to omit them.
+
 ## Project structure
 
 | Directory | Purpose |
@@ -387,10 +406,11 @@ See [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rule
 - Handlers throw, framework catches — no `try/catch` in tool logic
 - Use `ctx.log` for logging, `ctx.state` for storage
 - Register new tools and resources in the `createApp()` arrays
+- Wrap external API calls: validate raw → normalize to domain type → return output schema; never fabricate missing fields
 
 ## Contributing
 
-Issues and pull requests are welcome. Run checks and tests before submitting:
+Issues are welcome. Run checks and tests before submitting:
 
 ```sh
 bun run devcheck
@@ -399,4 +419,4 @@ bun run test
 
 ## License
 
-This project is licensed under the Apache 2.0 License. See the [LICENSE](./LICENSE) file for details.
+Apache-2.0 — see [LICENSE](LICENSE) for details.
