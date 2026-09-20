@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "reliefweb-mcp-server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.2](changelog/0.2.x/0.2.2.md) — 2026-09-20 · 🛡️ Security
+
+mcp-ts-core ^0.13.6 brings InvalidParams/RequestCancelled error classification and an explicit stateless session mode; fixes a ReliefWeb appname leaking through client-facing error data on upstream failures.
+
 ## [0.2.1](changelog/0.2.x/0.2.1.md) — 2026-08-25
 
 Framework bump to mcp-ts-core ^0.12.3 tightens the wire — tool inputs reject undeclared argument keys, the outputSchema declares the error envelope, and schemas emit as JSON Schema 2020-12 — plus scaffolded community-health files, a Docker multi-arch build fix, and a devcheck audit-classifier fix for Bun 1.4.
