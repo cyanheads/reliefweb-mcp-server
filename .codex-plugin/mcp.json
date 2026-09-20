@@ -3,8 +3,8 @@
     "command": "npx",
     "args": ["-y", "@cyanheads/reliefweb-mcp-server"],
     "env": {
-      "MCP_TRANSPORT_TYPE": "stdio",
-      "RELIEFWEB_APP_NAME": "your-app-name"
-    }
+      "MCP_TRANSPORT_TYPE": "stdio"
+    },
+    "env_vars": ["RELIEFWEB_APP_NAME"]
   }
 }

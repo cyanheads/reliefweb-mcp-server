@@ -1,20 +1,32 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "reliefweb-mcp-server",
   "version": "0.2.1",
   "description": "Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.",
   "author": {
-    "name": "cyanheads"
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://github.com/cyanheads"
   },
   "homepage": "https://github.com/cyanheads/reliefweb-mcp-server#readme",
   "repository": "https://github.com/cyanheads/reliefweb-mcp-server",
   "license": "Apache-2.0",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "reliefweb", "humanitarian", "disasters"],
+  "userConfig": {
+    "reliefweb_app_name": {
+      "type": "string",
+      "title": "ReliefWeb App Name",
+      "description": "Pre-approved appname for the ReliefWeb API v2. Register at https://reliefweb.int/help/api.",
+      "required": true
+    }
+  },
   "mcpServers": {
     "reliefweb-mcp-server": {
       "command": "npx",
       "args": ["-y", "@cyanheads/reliefweb-mcp-server"],
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
-        "RELIEFWEB_APP_NAME": "your-app-name"
+        "RELIEFWEB_APP_NAME": "${user_config.reliefweb_app_name}"
       }
     }
   }
