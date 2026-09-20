@@ -139,7 +139,7 @@ export class ReliefWebService {
         });
 
         if (!response.ok) {
-          throw await upstreamHttpError(response, { contentType, url });
+          throw await upstreamHttpError(response, { contentType });
         }
 
         const text = await response.text();
@@ -180,7 +180,7 @@ export class ReliefWebService {
         if (response.status === 404) return null;
 
         if (!response.ok) {
-          throw await upstreamHttpError(response, { contentType, id, url });
+          throw await upstreamHttpError(response, { contentType, id });
         }
 
         const text = await response.text();

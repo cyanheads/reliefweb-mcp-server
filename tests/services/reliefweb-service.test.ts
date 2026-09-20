@@ -722,6 +722,32 @@ describe('ReliefWebService — upstream error classification', () => {
 
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledOnce();
   });
+
+  /**
+   * `error.data` is forwarded to the client as `structuredContent.error.data`, and every
+   * ReliefWeb request URL carries the operator's `appname` in its query string. Neither the
+   * service's own data payload nor `httpErrorFromResponse` may put it there.
+   */
+  it.each([
+    ['POST', (s: ReliefWebService) => s.searchReports({ country: 'SYR' }, createMockContext())],
+    ['GET', (s: ReliefWebService) => s.getReport(1, createMockContext())],
+  ])('the %s error path keeps the request URL and its appname off error.data', async (_, call) => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'secret-operator-appname');
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      url: 'https://api.reliefweb.int/v2/reports?appname=secret-operator-appname',
+      text: async () => rejectedSortBody,
+      headers: { get: () => null },
+    } as unknown as Response);
+
+    const err = (await call(makeService()).catch((e: unknown) => e)) as McpError;
+
+    expect(err).toBeInstanceOf(McpError);
+    expect(err.data?.url).toBeUndefined();
+    expect(JSON.stringify(err.data ?? {})).not.toContain('secret-operator-appname');
+  });
 });
 
 // ─── Issue #14: job/training detail fetch ────────────────────────────────────

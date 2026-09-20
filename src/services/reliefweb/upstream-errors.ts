@@ -16,6 +16,11 @@ import { httpErrorFromResponse } from '@cyanheads/mcp-ts-core/utils';
  * Anything left in `data` — including the captured `body` — never reaches `content[]`, so
  * the detail is folded into the message here and mirrored onto `data.upstreamMessage` for
  * the tool layer to quote.
+ *
+ * `data` never carries the request URL. `error.data` is forwarded to the client as
+ * `structuredContent.error.data`, and every ReliefWeb URL carries the operator's
+ * `appname` in its query string. `includeUrl` stays off for the same reason; the
+ * message already names the service.
  */
 export async function upstreamHttpError(
   response: Response,
