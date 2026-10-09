@@ -4,7 +4,7 @@ All notable changes to this project. Each entry links to its full per-version fi
 
 ## [0.2.3](changelog/0.2.x/0.2.3.md) — 2026-10-09 · 🛡️ Security
 
-mcp-ts-core ^0.13.14; search and list tools stop returning ReliefWeb's raw error response in client error data (#24), and get tools reject a sections name the record lacks, listing the names it carries.
+mcp-ts-core ^0.13.14; tools and resources stop returning ReliefWeb's raw error response in client error data (#24, #27), and get tools reject a sections name the record lacks, listing the names it carries.
 
 ## [0.2.2](changelog/0.2.x/0.2.2.md) — 2026-09-20 · 🛡️ Security
 
