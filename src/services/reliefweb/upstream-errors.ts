@@ -13,14 +13,17 @@ import { httpErrorFromResponse } from '@cyanheads/mcp-ts-core/utils';
  * the invalid filter key, the rejected date format. `httpErrorFromResponse` classifies the
  * status correctly but emits a fixed `"ReliefWeb returned HTTP <status>."` message with no
  * override, and the tool error text path renders only `message` plus `data.recovery.hint`.
- * Anything left in `data` — including the captured `body` — never reaches `content[]`, so
- * the detail is folded into the message here and mirrored onto `data.upstreamMessage` for
- * the tool layer to quote.
+ * Anything left in `data` never reaches `content[]`, so the detail is folded into the
+ * message here and mirrored onto `data.upstreamMessage` for the tool layer to quote.
  *
- * `data` never carries the request URL. `error.data` is forwarded to the client as
- * `structuredContent.error.data`, and every ReliefWeb URL carries the operator's
- * `appname` in its query string. `includeUrl` stays off for the same reason; the
- * message already names the service.
+ * `error.data` is forwarded to the client — as `structuredContent.error.data` from a tool,
+ * as the JSON-RPC error `data` from a resource read — so the returned error's `data` is an
+ * allowlist: the caller's fields, `upstreamMessage`, and the two keys `withRetry` reads
+ * (`retryAfter`, and `retryable: false` on a 501). ReliefWeb's raw response (`body` /
+ * `responseBody`) stays off it, and so do the status fields the message already states.
+ * The framework error, raw body included, rides `cause` for the log. The request URL is
+ * never captured (`includeUrl` stays off): every ReliefWeb URL carries the operator's
+ * `appname` in its query string.
  */
 export async function upstreamHttpError(
   response: Response,
@@ -28,11 +31,18 @@ export async function upstreamHttpError(
 ): Promise<McpError> {
   const error = await httpErrorFromResponse(response, { service: 'ReliefWeb', data });
   const detail = parseReliefWebErrorMessage(error.data?.body);
-  if (!detail) return error;
-  return new McpError(error.code, `${error.message} ${detail}`, {
-    ...error.data,
-    upstreamMessage: detail,
-  });
+  const { retryAfter, retryable } = error.data ?? {};
+  return new McpError(
+    error.code,
+    detail ? `${error.message} ${detail}` : error.message,
+    {
+      ...(retryAfter !== undefined && { retryAfter }),
+      ...(retryable !== undefined && { retryable }),
+      ...data,
+      ...(detail && { upstreamMessage: detail }),
+    },
+    { cause: error },
+  );
 }
 
 /**

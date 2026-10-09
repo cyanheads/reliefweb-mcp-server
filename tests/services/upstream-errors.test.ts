@@ -18,16 +18,33 @@ import {
  * Minimal non-OK `Response` stand-in. `httpErrorFromResponse` reads `status`,
  * `statusText`, `url`, `text()`, and `headers.get('retry-after')`.
  */
-function makeErrorResponse(status: number, body: string, statusText = ''): Response {
+function makeErrorResponse(
+  status: number,
+  body: string,
+  statusText = '',
+  retryAfter: string | null = null,
+): Response {
   return {
     ok: false,
     status,
     statusText,
-    url: 'https://api.reliefweb.int/v2/reports',
+    url: 'https://api.reliefweb.int/v2/reports?appname=secret-operator-appname',
     text: async () => body,
-    headers: { get: () => null },
+    headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? retryAfter : null) },
   } as unknown as Response;
 }
+
+/** The raw-response and status keys `httpErrorFromResponse` writes that never reach `data`. */
+const RAW_RESPONSE_KEYS = ['body', 'responseBody', 'status', 'statusText', 'statusCode', 'url'];
+
+const RW_503 = JSON.stringify({
+  status: 503,
+  time: 31,
+  error: {
+    type: 'ServiceUnavailableHttpException',
+    message: 'The search backend is temporarily unavailable. Please try again later.',
+  },
+});
 
 const RW_400 = JSON.stringify({
   status: 400,
@@ -67,10 +84,10 @@ describe('upstreamHttpError', () => {
   it('preserves the caller-supplied data fields alongside the parsed message', async () => {
     const err = await upstreamHttpError(makeErrorResponse(400, RW_400), {
       contentType: 'reports',
-      url: 'https://api.reliefweb.int/v2/reports',
+      id: 7,
     });
 
-    expect(err.data).toMatchObject({ contentType: 'reports', status: 400 });
+    expect(err.data).toMatchObject({ contentType: 'reports', id: 7 });
   });
 
   it('leaves a 5xx on the service contract with no upstreamMessage', async () => {
@@ -106,6 +123,87 @@ describe('upstreamHttpError', () => {
 
     expect(err.data?.upstreamMessage).toBeUndefined();
   });
+});
+
+/**
+ * `error.data` reaches the client as `structuredContent.error.data` (tools) or the JSON-RPC
+ * error `data` (resource reads). ReliefWeb's raw response text stays on the logged cause.
+ */
+describe('upstreamHttpError — client-visible data', () => {
+  it('a 503 with a JSON error envelope carries no raw response, only the parsed explanation', async () => {
+    const err = await upstreamHttpError(
+      makeErrorResponse(503, RW_503, 'Service Unavailable', '120'),
+      { contentType: 'reports', id: 1 },
+    );
+
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.message).toBe(
+      'ReliefWeb returned HTTP 503 Service Unavailable. The search backend is temporarily unavailable. Please try again later.',
+    );
+    expect(err.data).toEqual({
+      contentType: 'reports',
+      id: 1,
+      retryAfter: '120',
+      upstreamMessage: 'The search backend is temporarily unavailable. Please try again later.',
+    });
+  });
+
+  it('a 400 with a JSON error envelope carries no raw response, only the parsed explanation', async () => {
+    const err = await upstreamHttpError(makeErrorResponse(400, RW_400, 'Bad Request'), {
+      contentType: 'reports',
+    });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
+    expect(err.data).toEqual({
+      contentType: 'reports',
+      upstreamMessage:
+        "Unrecognized sort field 'bogus.field'. Check the entity information for available fields.",
+    });
+  });
+
+  it('a failure with no parseable explanation carries no raw response either', async () => {
+    const err = await upstreamHttpError(
+      makeErrorResponse(503, '<html>upstream proxy detail</html>', 'Service Unavailable'),
+      { contentType: 'reports', id: 1 },
+    );
+
+    expect(err.message).toBe('ReliefWeb returned HTTP 503 Service Unavailable.');
+    expect(err.data).toEqual({ contentType: 'reports', id: 1 });
+  });
+
+  it('keeps the 501 retryable: false verdict so withRetry fails it fast', async () => {
+    const err = await upstreamHttpError(makeErrorResponse(501, RW_503, 'Not Implemented'), {
+      contentType: 'reports',
+    });
+
+    expect(err.data?.retryable).toBe(false);
+    for (const key of RAW_RESPONSE_KEYS) expect(err.data).not.toHaveProperty(key);
+  });
+
+  it('never carries the request URL or its appname', async () => {
+    const err = await upstreamHttpError(makeErrorResponse(503, RW_503), { contentType: 'reports' });
+
+    expect(JSON.stringify(err.data)).not.toContain('secret-operator-appname');
+    expect(JSON.stringify(err.data)).not.toContain('api.reliefweb.int');
+  });
+
+  it.each([
+    [503, RW_503],
+    [400, RW_400],
+  ])(
+    'keeps the framework error, raw body included, on cause for the log (%i)',
+    async (status, body) => {
+      const err = await upstreamHttpError(makeErrorResponse(status, body), {
+        contentType: 'reports',
+      });
+
+      expect(err.cause).toBeInstanceOf(McpError);
+      const cause = err.cause as McpError;
+      expect(cause.code).toBe(err.code);
+      expect(cause.data).toMatchObject({ status, body, contentType: 'reports' });
+    },
+  );
 });
 
 describe('isRejectedQueryError', () => {
