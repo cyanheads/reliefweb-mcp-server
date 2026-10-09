@@ -3,9 +3,11 @@
  * @module tests/tools/get-country.tool.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetCountry } from '@/mcp-server/tools/definitions/get-country.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockGetCountry = vi.fn();
 const mockGetCountryArchive = vi.fn();
@@ -183,6 +185,23 @@ describe('reliefwebGetCountry', () => {
     );
     expect(result.profileOverview).toHaveLength(40_000);
     expect(result.keyContent).toBeUndefined();
+  });
+
+  it('rejects a section this profile does not carry and names the ones it does', async () => {
+    const country = oversizedCountry();
+    mockGetCountry.mockResolvedValue(country);
+
+    const err = await contractError(reliefwebGetCountry, {
+      iso3: 'SYR',
+      sections: ['profileOverview', 'usefulLinks'],
+    });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toContain('Unknown section: usefulLinks.');
+    expect(err.data).toMatchObject({
+      unmatched: ['usefulLinks'],
+      available: Object.keys(country),
+    });
   });
 
   // ─── Archive retrieval ─────────────────────────────────────────────────────

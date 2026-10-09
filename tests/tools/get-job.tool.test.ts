@@ -3,9 +3,11 @@
  * @module tests/tools/get-job.tool.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetJob } from '@/mcp-server/tools/definitions/get-job.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockGetJob = vi.fn();
 
@@ -93,6 +95,23 @@ describe('reliefwebGetJob', () => {
     );
     expect(result.howToApply).toHaveLength(309);
     expect(result.body).toBeUndefined();
+  });
+
+  it('rejects a section this record does not carry and names the ones it does', async () => {
+    const { howToApply: _omitted, ...withoutInstructions } = realisticJob();
+    mockGetJob.mockResolvedValue(withoutInstructions);
+
+    const err = await contractError(reliefwebGetJob, {
+      id: 4221508,
+      sections: ['body', 'howToApply'],
+    });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toContain('Unknown section: howToApply.');
+    expect(err.data).toMatchObject({
+      unmatched: ['howToApply'],
+      available: Object.keys(withoutInstructions),
+    });
   });
 
   it('throws not_found and routes the caller back to the job search tool', async () => {

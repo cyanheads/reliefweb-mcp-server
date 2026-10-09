@@ -3,9 +3,11 @@
  * @module tests/tools/get-disaster.tool.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetDisaster } from '@/mcp-server/tools/definitions/get-disaster.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockGetDisaster = vi.fn();
 const mockGetDisasterArchive = vi.fn();
@@ -154,6 +156,22 @@ describe('reliefwebGetDisaster', () => {
     const result = await reliefwebGetDisaster.handler(input, ctx);
 
     expect(result.description).toHaveLength(36_849);
+  });
+
+  it('rejects a section this record does not carry and names the ones it does', async () => {
+    mockGetDisaster.mockResolvedValue({ id: 1, name: 'Minimal Disaster', status: 'past' });
+
+    const err = await contractError(reliefwebGetDisaster, {
+      id: 1,
+      sections: ['profileOverview', 'keyContent'],
+    });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toContain('Unknown sections: profileOverview, keyContent.');
+    expect(err.data).toMatchObject({
+      unmatched: ['profileOverview', 'keyContent'],
+      available: ['id', 'name', 'status'],
+    });
   });
 
   it('throws not_found when disaster does not exist', async () => {

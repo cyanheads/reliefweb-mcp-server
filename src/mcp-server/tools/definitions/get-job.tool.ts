@@ -90,7 +90,6 @@ export const reliefwebGetJob = tool('reliefweb_get_job', {
       throw ctx.fail(
         'not_found',
         `No job posting found with ID ${input.id}. Verify the ID from reliefweb_search_jobs.`,
-        { ...ctx.recoveryFor('not_found') },
       );
     }
     return documentOrOutline(job, input.sections, JOB_IDENTITY);

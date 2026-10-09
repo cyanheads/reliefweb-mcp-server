@@ -3,9 +3,11 @@
  * @module tests/tools/get-training.tool.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetTraining } from '@/mcp-server/tools/definitions/get-training.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockGetTraining = vi.fn();
 
@@ -103,6 +105,23 @@ describe('reliefwebGetTraining', () => {
     expect(result.cost).toBe('fee-based');
     expect(result.howToRegister).toHaveLength(253);
     expect(result.body).toBeUndefined();
+  });
+
+  it('rejects a section this record does not carry and names the ones it does', async () => {
+    const { feeInformation: _omitted, ...freeCourse } = { ...realisticTraining(), cost: 'free' };
+    mockGetTraining.mockResolvedValue(freeCourse);
+
+    const err = await contractError(reliefwebGetTraining, {
+      id: 4188583,
+      sections: ['cost', 'feeInformation'],
+    });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toContain('Unknown section: feeInformation.');
+    expect(err.data).toMatchObject({
+      unmatched: ['feeInformation'],
+      available: Object.keys(freeCourse),
+    });
   });
 
   it('throws not_found and routes the caller back to the training search tool', async () => {

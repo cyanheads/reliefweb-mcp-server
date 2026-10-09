@@ -99,7 +99,6 @@ export const reliefwebGetTraining = tool('reliefweb_get_training', {
       throw ctx.fail(
         'not_found',
         `No training listing found with ID ${input.id}. Verify the ID from reliefweb_search_training.`,
-        { ...ctx.recoveryFor('not_found') },
       );
     }
     return documentOrOutline(training, input.sections, TRAINING_IDENTITY);

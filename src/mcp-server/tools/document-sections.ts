@@ -71,6 +71,7 @@ export function sectionsInput(subject: string, alsoNote = '') {
     .describe(
       `Sections of the ${subject} record to return, named by the sections[].name values an outline response lists. ` +
         'Omit for the whole record, or for a section outline when the record is over the response budget. ' +
+        'Records are sparse, so a name this record does not carry is rejected with the names it does. ' +
         "Identity metadata — the record's ID, its name, and its canonical URL — comes back alongside whatever is requested. " +
         'The call is self-contained — the record is re-fetched and sliced, so no prior call has to be repeated.' +
         alsoNote,

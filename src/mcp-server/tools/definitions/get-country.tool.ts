@@ -134,9 +134,7 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
   async handler(input, ctx) {
     const iso3 = input.iso3.trim().toUpperCase();
     if (input.archive && input.sections?.length) {
-      throw ctx.fail('selector_conflict', SELECTOR_CONFLICT, {
-        ...ctx.recoveryFor('selector_conflict'),
-      });
+      throw ctx.fail('selector_conflict', SELECTOR_CONFLICT);
     }
     ctx.log.info('reliefweb_get_country', {
       iso3,
@@ -151,7 +149,6 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
         throw ctx.fail(
           'not_found',
           `No country profile found for ISO3 code "${iso3}". Verify the code is valid or use reliefweb_list_countries.`,
-          { ...ctx.recoveryFor('not_found') },
         );
       }
       const { entries, ...identity } = found;
@@ -167,7 +164,6 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
       throw ctx.fail(
         'not_found',
         `No country profile found for ISO3 code "${iso3}". Verify the code is valid or use reliefweb_list_countries.`,
-        { ...ctx.recoveryFor('not_found') },
       );
     }
     return documentOrOutline(country, input.sections, COUNTRY_IDENTITY);

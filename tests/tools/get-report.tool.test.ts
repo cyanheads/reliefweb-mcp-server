@@ -3,9 +3,11 @@
  * @module tests/tools/get-report.tool.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetReport } from '@/mcp-server/tools/definitions/get-report.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockGetReport = vi.fn();
 
@@ -106,6 +108,25 @@ describe('reliefwebGetReport', () => {
 
     expect(result.body).toHaveLength(30_000);
     expect(result.dateOriginal).toBeUndefined();
+  });
+
+  it('rejects a section this record does not carry and names the ones it does', async () => {
+    mockGetReport.mockResolvedValue({
+      id: 1234567,
+      title: 'Binary-only map',
+      urlAlias: 'https://reliefweb.int/map/test',
+      fileUrls: ['https://reliefweb.int/attachments/map.pdf'],
+    });
+
+    const err = await contractError(reliefwebGetReport, { id: 1234567, sections: ['body'] });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toContain('Unknown section: body.');
+    expect(err.message).toContain('Available sections: id, title, urlAlias, fileUrls.');
+    expect(err.data).toMatchObject({
+      unmatched: ['body'],
+      available: ['id', 'title', 'urlAlias', 'fileUrls'],
+    });
   });
 
   it('throws not_found when report does not exist', async () => {

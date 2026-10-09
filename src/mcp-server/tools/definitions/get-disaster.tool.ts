@@ -138,9 +138,7 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
 
   async handler(input, ctx) {
     if (input.archive && input.sections?.length) {
-      throw ctx.fail('selector_conflict', SELECTOR_CONFLICT, {
-        ...ctx.recoveryFor('selector_conflict'),
-      });
+      throw ctx.fail('selector_conflict', SELECTOR_CONFLICT);
     }
     ctx.log.info('reliefweb_get_disaster', {
       id: input.id,
@@ -155,7 +153,6 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
         throw ctx.fail(
           'not_found',
           `No disaster found with ID ${input.id}. Verify the ID from reliefweb_search_disasters.`,
-          { ...ctx.recoveryFor('not_found') },
         );
       }
       const { entries, ...identity } = found;
@@ -171,7 +168,6 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
       throw ctx.fail(
         'not_found',
         `No disaster found with ID ${input.id}. Verify the ID from reliefweb_search_disasters.`,
-        { ...ctx.recoveryFor('not_found') },
       );
     }
     return documentOrOutline(disaster, input.sections, DISASTER_IDENTITY);

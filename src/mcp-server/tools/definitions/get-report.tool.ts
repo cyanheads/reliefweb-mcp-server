@@ -87,7 +87,6 @@ export const reliefwebGetReport = tool('reliefweb_get_report', {
       throw ctx.fail(
         'not_found',
         `No report found with ID ${input.id}. Verify the ID is a valid ReliefWeb numeric ID.`,
-        { ...ctx.recoveryFor('not_found') },
       );
     }
     return documentOrOutline(report, input.sections, REPORT_IDENTITY);
