@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-09-20 15:01:22
+Generated on: 2026-10-09 07:39:15
 
 ```text
 reliefweb-mcp-server/
@@ -128,9 +128,11 @@ reliefweb-mcp-server/
 │   ├── clean-mcpb.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
+│   ├── install-otel.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
@@ -172,6 +174,8 @@ reliefweb-mcp-server/
 │   │       └── vocabularies.ts
 │   └── index.ts
 ├── tests/
+│   ├── helpers/
+│   │   └── contract-error.ts
 │   ├── prompts/
 │   │   └── crisis-briefing.prompt.test.ts
 │   ├── resources/

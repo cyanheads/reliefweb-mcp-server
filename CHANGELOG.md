@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.3](changelog/0.2.x/0.2.3.md) — 2026-10-09 · 🛡️ Security
+
+mcp-ts-core ^0.13.14; search and list tools stop returning ReliefWeb's raw error response in client error data (#24), and get tools reject a sections name the record lacks, listing the names it carries.
+
 ## [0.2.2](changelog/0.2.x/0.2.2.md) — 2026-09-20 · 🛡️ Security
 
 mcp-ts-core ^0.13.6 brings InvalidParams/RequestCancelled error classification and an explicit stateless session mode; fixes a ReliefWeb appname leaking through client-facing error data on upstream failures.
