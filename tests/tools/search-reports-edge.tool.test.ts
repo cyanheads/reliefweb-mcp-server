@@ -7,6 +7,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchReports } from '@/mcp-server/tools/definitions/search-reports.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockSearchReports = vi.fn();
 
@@ -385,12 +386,7 @@ describe('reliefwebSearchReports — upstream error contract', () => {
       }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
-    const input = reliefwebSearchReports.input.parse({ sort: 'bogus.field:desc' });
-
-    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebSearchReports, { sort: 'bogus.field:desc' });
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
@@ -407,14 +403,10 @@ describe('reliefwebSearchReports — upstream error contract', () => {
       }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
-    const input = reliefwebSearchReports.input.parse({ filter: { bogus: 'nope' } });
+    const err = await contractError(reliefwebSearchReports, { filter: { bogus: 'nope' } });
 
-    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
-
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.data?.recovery?.hint).not.toMatch(/quota/i);
   });
 
   it('keeps the retry-flavored upstream_error contract for a service failure', async () => {
@@ -422,16 +414,25 @@ describe('reliefwebSearchReports — upstream error contract', () => {
       new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503.'),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
-    const input = reliefwebSearchReports.input.parse({ text: 'floods' });
-
-    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebSearchReports, { text: 'floods' });
 
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error' });
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).toMatch(/quota/i);
+    expect(err.data?.recovery?.hint).toMatch(/quota/i);
+  });
+
+  it('keeps the upstream error and its captured body off the client envelope', async () => {
+    mockSearchReports.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503.', {
+        body: '{"error":{"message":"upstream detail"}}',
+        status: 503,
+      }),
+    );
+
+    const err = await contractError(reliefwebSearchReports, { text: 'floods' });
+
+    expect(err.data).not.toHaveProperty('cause');
+    expect(JSON.stringify(err)).not.toContain('upstream detail');
   });
 
   it('falls back to upstream_error when a plain network failure has no McpError code', async () => {
@@ -474,17 +475,12 @@ describe('reliefwebSearchReports — auth and rate-limit statuses stay on upstre
       new McpError(code, 'ReliefWeb returned HTTP error.', { upstreamMessage: upstream }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
-    const input = reliefwebSearchReports.input.parse({});
-
-    const err = (await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebSearchReports, {});
 
     expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(err.data).toMatchObject({ reason: 'upstream_error' });
     expect(err.message).toContain(upstream);
-    const hint = (err.data as { recovery: { hint: string } }).recovery.hint;
+    const hint = err.data?.recovery?.hint;
     expect(hint).not.toMatch(/correct (the value|your input)/i);
     expect(hint).toMatch(/retry/i);
   });

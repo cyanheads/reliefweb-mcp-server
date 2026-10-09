@@ -7,6 +7,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchTraining } from '@/mcp-server/tools/definitions/search-training.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockSearchTraining = vi.fn();
 
@@ -125,16 +126,11 @@ describe('reliefwebSearchTraining', () => {
       new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503.'),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
-    const input = reliefwebSearchTraining.input.parse({ text: 'wash' });
-
-    const err = await Promise.resolve(reliefwebSearchTraining.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(McpError);
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
-    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
-    expect((err as McpError).data).toHaveProperty('recovery.hint');
+    const err = await contractError(reliefwebSearchTraining, { text: 'wash' });
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.data).toMatchObject({ reason: 'upstream_error' });
+    expect(err.data).toHaveProperty('recovery.hint');
+    expect(err.data).not.toHaveProperty('cause');
   });
 
   it('throws ctx.fail("invalid_query") with the ReliefWeb message when the query is rejected', async () => {
@@ -144,16 +140,12 @@ describe('reliefwebSearchTraining', () => {
       }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
-    const input = reliefwebSearchTraining.input.parse({ sort: 'bogus.field:desc' });
-
-    const err = (await Promise.resolve(reliefwebSearchTraining.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebSearchTraining, { sort: 'bogus.field:desc' });
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+    expect(err.data?.recovery?.hint).toMatch(/correct the value/i);
+    expect(err.data?.recovery?.hint).not.toMatch(/quota/i);
   });
 
   it('passes date range filters correctly', async () => {

@@ -251,7 +251,6 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       throw ctx.fail(
         'unknown_format',
         unknownValueMessage('format', format.unmatched, REPORT_FORMATS),
-        ctx.recoveryFor('unknown_format'),
       );
     }
 
@@ -298,18 +297,15 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       )
       .catch((err: unknown) => {
         if (isRejectedQueryError(err)) {
-          throw ctx.fail('invalid_query', rejectedQueryMessage('reports', err), {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('reports', err), undefined, {
             cause: err,
-            ...ctx.recoveryFor('invalid_query'),
           });
         }
         throw ctx.fail(
           'upstream_error',
           upstreamErrorMessage('ReliefWeb API error while searching reports.', err),
-          {
-            cause: err,
-            ...ctx.recoveryFor('upstream_error'),
-          },
+          undefined,
+          { cause: err },
         );
       });
 

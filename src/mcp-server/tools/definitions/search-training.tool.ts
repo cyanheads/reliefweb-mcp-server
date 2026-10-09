@@ -261,18 +261,15 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       )
       .catch((err: unknown) => {
         if (isRejectedQueryError(err)) {
-          throw ctx.fail('invalid_query', rejectedQueryMessage('training', err), {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('training', err), undefined, {
             cause: err,
-            ...ctx.recoveryFor('invalid_query'),
           });
         }
         throw ctx.fail(
           'upstream_error',
           upstreamErrorMessage('ReliefWeb API error while searching training.', err),
-          {
-            cause: err,
-            ...ctx.recoveryFor('upstream_error'),
-          },
+          undefined,
+          { cause: err },
         );
       });
 

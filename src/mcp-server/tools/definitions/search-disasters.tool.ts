@@ -219,7 +219,6 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       throw ctx.fail(
         'unknown_status',
         unknownValueMessage('status', status.unmatched, DISASTER_STATUSES),
-        ctx.recoveryFor('unknown_status'),
       );
     }
 
@@ -256,18 +255,15 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       )
       .catch((err: unknown) => {
         if (isRejectedQueryError(err)) {
-          throw ctx.fail('invalid_query', rejectedQueryMessage('disasters', err), {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('disasters', err), undefined, {
             cause: err,
-            ...ctx.recoveryFor('invalid_query'),
           });
         }
         throw ctx.fail(
           'upstream_error',
           upstreamErrorMessage('ReliefWeb API error while searching disasters.', err),
-          {
-            cause: err,
-            ...ctx.recoveryFor('upstream_error'),
-          },
+          undefined,
+          { cause: err },
         );
       });
 

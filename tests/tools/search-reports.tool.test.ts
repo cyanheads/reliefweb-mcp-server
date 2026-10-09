@@ -7,6 +7,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchReports } from '@/mcp-server/tools/definitions/search-reports.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockSearchReports = vi.fn();
 
@@ -88,19 +89,11 @@ describe('reliefwebSearchReports', () => {
       new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 502'),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchReports.errors });
-    const input = reliefwebSearchReports.input.parse({ text: 'syria' });
-
-    const err = await Promise.resolve(reliefwebSearchReports.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(McpError);
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
-    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
-    expect((err as McpError).data).toHaveProperty('recovery.hint');
-    expect(((err as McpError).data as { recovery: { hint: string } }).recovery.hint).toContain(
-      '1,000 calls/day',
-    );
+    const err = await contractError(reliefwebSearchReports, { text: 'syria' });
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.data).toMatchObject({ reason: 'upstream_error' });
+    expect(err.data?.recovery?.hint).toContain('1,000 calls/day');
+    expect(err.data).not.toHaveProperty('cause');
   });
 
   it('populates notice enrichment when no reports match', async () => {

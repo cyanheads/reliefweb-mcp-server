@@ -7,6 +7,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchDisasters } from '@/mcp-server/tools/definitions/search-disasters.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockSearchDisasters = vi.fn();
 
@@ -109,16 +110,11 @@ describe('reliefwebSearchDisasters', () => {
       new McpError(JsonRpcErrorCode.RateLimited, 'ReliefWeb returned HTTP 429'),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
-    const input = reliefwebSearchDisasters.input.parse({ text: 'quake' });
-
-    const err = await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(McpError);
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
-    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
-    expect((err as McpError).data).toHaveProperty('recovery.hint');
+    const err = await contractError(reliefwebSearchDisasters, { text: 'quake' });
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.data).toMatchObject({ reason: 'upstream_error' });
+    expect(err.data?.recovery?.hint).toMatch(/retry/i);
+    expect(err.data).not.toHaveProperty('cause');
   });
 
   it('handles sparse disaster with only required fields', async () => {
@@ -186,17 +182,13 @@ describe('reliefwebSearchDisasters — upstream error contract', () => {
       }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
-    const input = reliefwebSearchDisasters.input.parse({ sort: 'bogus.field:desc' });
-
-    const err = (await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebSearchDisasters, { sort: 'bogus.field:desc' });
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+    expect(err.data?.recovery?.hint).toMatch(/correct the value/i);
+    expect(err.data?.recovery?.hint).not.toMatch(/quota/i);
   });
 });
 
@@ -316,16 +308,10 @@ describe('reliefwebSearchDisasters — status vocabulary', () => {
   });
 
   it('recovery hint points at include_archived for alert-archive', async () => {
-    const ctx = createMockContext({ errors: reliefwebSearchDisasters.errors });
-    const input = reliefwebSearchDisasters.input.parse({ status: 'nonsense' });
+    const err = await contractError(reliefwebSearchDisasters, { status: 'nonsense' });
 
-    const err = (await Promise.resolve(reliefwebSearchDisasters.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
-
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).toContain(
-      'include_archived',
-    );
+    expect(err.data).toMatchObject({ reason: 'unknown_status' });
+    expect(err.data?.recovery?.hint).toContain('include_archived');
   });
 });
 

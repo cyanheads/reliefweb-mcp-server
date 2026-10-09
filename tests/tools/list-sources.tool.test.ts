@@ -7,6 +7,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebListSources } from '@/mcp-server/tools/definitions/list-sources.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockListSources = vi.fn();
 
@@ -100,16 +101,11 @@ describe('reliefwebListSources', () => {
       new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503'),
     );
 
-    const ctx = createMockContext({ errors: reliefwebListSources.errors });
-    const input = reliefwebListSources.input.parse({ type: 'International Organization' });
-
-    const err = await Promise.resolve(reliefwebListSources.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(McpError);
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
-    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
-    expect((err as McpError).data).toHaveProperty('recovery.hint');
+    const err = await contractError(reliefwebListSources, { type: 'International Organization' });
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.data).toMatchObject({ reason: 'upstream_error' });
+    expect(err.data).toHaveProperty('recovery.hint');
+    expect(err.data).not.toHaveProperty('cause');
   });
 
   it('handles sparse source without optional fields', async () => {
@@ -183,17 +179,13 @@ describe('reliefwebListSources — upstream error contract', () => {
       }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebListSources.errors });
-    const input = reliefwebListSources.input.parse({ text: 'WFP' });
-
-    const err = (await Promise.resolve(reliefwebListSources.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebListSources, { text: 'WFP' });
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain("Invalid filter field 'bogus'");
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+    expect(err.data?.recovery?.hint).toMatch(/correct the value/i);
+    expect(err.data?.recovery?.hint).not.toMatch(/quota/i);
   });
 });
 

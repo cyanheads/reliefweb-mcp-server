@@ -203,18 +203,15 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       )
       .catch((err: unknown) => {
         if (isRejectedQueryError(err)) {
-          throw ctx.fail('invalid_query', rejectedQueryMessage('jobs', err), {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('jobs', err), undefined, {
             cause: err,
-            ...ctx.recoveryFor('invalid_query'),
           });
         }
         throw ctx.fail(
           'upstream_error',
           upstreamErrorMessage('ReliefWeb API error while searching jobs.', err),
-          {
-            cause: err,
-            ...ctx.recoveryFor('upstream_error'),
-          },
+          undefined,
+          { cause: err },
         );
       });
 

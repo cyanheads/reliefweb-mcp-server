@@ -123,18 +123,15 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       )
       .catch((err: unknown) => {
         if (isRejectedQueryError(err)) {
-          throw ctx.fail('invalid_query', rejectedQueryMessage('sources', err), {
+          throw ctx.fail('invalid_query', rejectedQueryMessage('sources', err), undefined, {
             cause: err,
-            ...ctx.recoveryFor('invalid_query'),
           });
         }
         throw ctx.fail(
           'upstream_error',
           upstreamErrorMessage('ReliefWeb API error while listing sources.', err),
-          {
-            cause: err,
-            ...ctx.recoveryFor('upstream_error'),
-          },
+          undefined,
+          { cause: err },
         );
       });
 

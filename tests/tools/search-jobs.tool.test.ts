@@ -7,6 +7,7 @@ import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchJobs } from '@/mcp-server/tools/definitions/search-jobs.tool.js';
+import { contractError } from '../helpers/contract-error.js';
 
 const mockSearchJobs = vi.fn();
 
@@ -118,16 +119,11 @@ describe('reliefwebSearchJobs', () => {
       new McpError(JsonRpcErrorCode.ServiceUnavailable, 'ReliefWeb returned HTTP 503'),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
-    const input = reliefwebSearchJobs.input.parse({ text: 'officer' });
-
-    const err = await Promise.resolve(reliefwebSearchJobs.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(McpError);
-    expect((err as McpError).code).toBe(JsonRpcErrorCode.ServiceUnavailable);
-    expect((err as McpError).data).toMatchObject({ reason: 'upstream_error' });
-    expect((err as McpError).data).toHaveProperty('recovery.hint');
+    const err = await contractError(reliefwebSearchJobs, { text: 'officer' });
+    expect(err.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(err.data).toMatchObject({ reason: 'upstream_error' });
+    expect(err.data).toHaveProperty('recovery.hint');
+    expect(err.data).not.toHaveProperty('cause');
   });
 
   it('normalizes country code to uppercase', async () => {
@@ -205,17 +201,13 @@ describe('reliefwebSearchJobs — upstream error contract', () => {
       }),
     );
 
-    const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
-    const input = reliefwebSearchJobs.input.parse({ sort: 'bogus.field:desc' });
-
-    const err = (await Promise.resolve(reliefwebSearchJobs.handler(input, ctx)).catch(
-      (e: unknown) => e,
-    )) as McpError;
+    const err = await contractError(reliefwebSearchJobs, { sort: 'bogus.field:desc' });
 
     expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
     expect(err.data).toMatchObject({ reason: 'invalid_query' });
     expect(err.message).toContain("Unrecognized sort field 'bogus.field'");
-    expect((err.data as { recovery: { hint: string } }).recovery.hint).not.toMatch(/quota/i);
+    expect(err.data?.recovery?.hint).toMatch(/correct the value/i);
+    expect(err.data?.recovery?.hint).not.toMatch(/quota/i);
   });
 });
 
