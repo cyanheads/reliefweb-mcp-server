@@ -29,24 +29,23 @@ export const reliefwebCrisisBriefing = prompt('reliefweb_crisis_briefing', {
     const target = args.country_or_disaster;
 
     const situationSection = `## Situation Overview
-- Use reliefweb_get_country (if this is a country) or reliefweb_get_disaster (if this is a disaster) to fetch the current overview and key content links.
-- Search for the 5 most recent Situation Reports using reliefweb_search_reports with text="${target}" and format="Situation Report".
-- Search for active disasters with reliefweb_search_disasters filtered by country or text.
+- For a country, use reliefweb_get_country with iso3=<ISO3> for the overview and key content links. Search reliefweb_search_reports with country=<ISO3>, format="Situation Report", and limit=5; search reliefweb_search_disasters with country=<ISO3> and status="alert,ongoing" for active disasters.
+- For a disaster name or GLIDE number, search reliefweb_search_disasters with text="${target}" to obtain its numeric ID, then use reliefweb_get_disaster with that ID. Search reliefweb_search_reports with disaster_id=<resolved ID>, format="Situation Report", and limit=5.
 - Summarize the current humanitarian situation in 3–5 sentences, citing report titles and dates.
 - List active disasters with status, GLIDE number, and primary type.
 - List key appeals and response plans from the country/disaster profile.`;
 
     const jobsSection = `## Open Positions
-- Determine whether "${target}" is a country/ISO3 code or a disaster name/GLIDE number.
-  - If it is a country or ISO3 code: call reliefweb_search_jobs with country="${target}".
+- Use the country/disaster classification resolved above.
+  - If it is a country or ISO3 code: call reliefweb_search_jobs with country=<ISO3>.
   - If it is a disaster name or GLIDE number: call reliefweb_search_jobs with text="${target}" (the country= filter expects an ISO3 code; passing a disaster name returns no results).
 - Group by organization and career category.
 - List title, organization, closing date, and URL for each position.
 - Note total count and any recurring roles (e.g., multiple UNHCR positions).`;
 
     const trainingSection = `## Training Opportunities
-- Determine whether "${target}" is a country/ISO3 code or a disaster name/GLIDE number.
-  - If it is a country or ISO3 code: call reliefweb_search_training with country="${target}".
+- Use the country/disaster classification resolved above.
+  - If it is a country or ISO3 code: call reliefweb_search_training with country=<ISO3>.
   - If it is a disaster name or GLIDE number: call reliefweb_search_training with text="${target}".
 - List title, organizer, start date, format, and URL for each opportunity.`;
 
@@ -62,6 +61,11 @@ export const reliefwebCrisisBriefing = prompt('reliefweb_crisis_briefing', {
     const message = `You are preparing a humanitarian briefing for: **${target}**
 
 Use the available ReliefWeb tools to gather current data, then produce a structured briefing with the sections below. Cite specific report titles, IDs, and dates. Do not invent data — only include what the tools return.
+
+## Resolve the target
+- Determine whether "${target}" is a country name, an ISO3 code, or a disaster name/GLIDE number.
+- A country name must first be resolved through reliefweb_list_countries({limit:1000}). Read the matching country's ISO3 code; if totalCount exceeds the returned page, continue with offset until the country is found or the listing is exhausted. An ISO3 input can be used directly.
+- Reuse that code wherever <ISO3> appears below. Never substitute a country name into country= or iso3=. Keep disaster names and GLIDE numbers on the separate disaster branch; do not resolve them as countries.
 
 ${sections}
 

@@ -7,6 +7,39 @@ import { describe, expect, it } from 'vitest';
 import { reliefwebCrisisBriefing } from '@/mcp-server/prompts/definitions/crisis-briefing.prompt.js';
 
 describe('reliefwebCrisisBriefing', () => {
+  it.each(['situation', 'jobs', 'full'] as const)(
+    'resolves country names before filtered calls for %s',
+    async (focus) => {
+      const messages = await reliefwebCrisisBriefing.generate({
+        country_or_disaster: 'Kenya',
+        focus,
+      });
+      const text = (messages[0]!.content as { type: string; text: string }).text;
+      const resolution = text.indexOf('reliefweb_list_countries({limit:1000})');
+      expect(resolution).toBeGreaterThan(-1);
+      expect(resolution).toBeLessThan(text.indexOf('country=<ISO3>'));
+      expect(text).toContain('totalCount');
+      expect(text).toContain('ISO3 input can be used directly');
+      expect(text).not.toContain('country="Kenya"');
+      expect(text).not.toContain('iso3="Kenya"');
+      if (focus !== 'jobs') expect(text).toContain('iso3=<ISO3>');
+    },
+  );
+
+  it.each(['Syria earthquake', 'EQ-2023-000053-TUR'])(
+    'keeps disaster text search separate for %s',
+    async (target) => {
+      const messages = await reliefwebCrisisBriefing.generate({
+        country_or_disaster: target,
+        focus: 'full',
+      });
+      const text = (messages[0]!.content as { type: string; text: string }).text;
+      expect(text).toContain(`text="${target}"`);
+      expect(text).not.toContain(`country="${target}"`);
+      expect(text).toContain('numeric ID');
+    },
+  );
+
   it('generates a full briefing when focus is omitted', async () => {
     const messages = await reliefwebCrisisBriefing.generate({
       country_or_disaster: 'Afghanistan',
