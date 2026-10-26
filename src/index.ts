@@ -35,6 +35,7 @@ await createApp({
    * sets it to a meaningful value.
    */
   sessionMode: 'stateless',
+  skills: 'skills',
   instructions:
     "Use the reliefweb_* tools to query ReliefWeb (OCHA humanitarian data) for reports, disasters, countries, jobs, and training. A pre-approved RELIEFWEB_APP_NAME is required. Countries use ISO3 codes (e.g. SYR), everything else uses numeric IDs, and organizations use a shortname (e.g. WFP). Workflow: the reliefweb_search_* tools return summaries with the document text excluded, then the matching reliefweb_get_* tool fetches one record in full — reports, disasters, jobs, and training each have one; a disaster ID also feeds the disaster_id report filter. Every reliefweb_get_* tool returns a section outline instead of the record when it exceeds the response budget: re-call the same tool with sections to pull named sections. Country and disaster profiles carry only each curated link list's active entries; re-call with archive to page a list's archived ones — sections and archive are alternative modes and cannot be combined. Quota: 1,000 calls/day.",
   tools: [
