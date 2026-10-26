@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-10-26
+
+Humanitarian research guidance and reliable ReliefWeb queries
+
 ## [0.2.3](changelog/0.2.x/0.2.3.md) — 2026-10-09 · 🛡️ Security
 
 mcp-ts-core ^0.13.14; tools and resources stop returning ReliefWeb's raw error response in client error data (#24, #27), and get tools reject a sections name the record lacks, listing the names it carries.
