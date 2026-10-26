@@ -7,6 +7,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 import {
   documentOrOutline,
   OUTLINE_KIND,
@@ -52,10 +53,12 @@ const TrainingFields = z.object({
   feeInformation: z
     .string()
     .describe('Fee detail as published by the organizer — amounts, inclusions, and conditions.'),
-  body: z.string().describe('Full training description (HTML) — content, audience, and logistics.'),
+  body: z
+    .string()
+    .describe('Full training description (Markdown) — content, audience, and logistics.'),
   howToRegister: z
     .string()
-    .describe('Registration instructions (HTML) as published by the organizer.'),
+    .describe('Registration instructions (Markdown) as published by the organizer.'),
 });
 
 const TrainingOutput = z.object({
@@ -116,32 +119,41 @@ export const reliefwebGetTraining = tool('reliefweb_get_training', {
  * arms.
  */
 function renderTraining(result: z.infer<typeof TrainingOutput>) {
-  const lines: string[] = [`# ${result.title ?? `Training ${result.id}`}`];
+  const lines: string[] = [`**${escapeMarkdownInline(result.title ?? `Training ${result.id}`)}**`];
   lines.push(`**ID:** ${result.id}`);
   lines.push(`**Mode:** ${result.kind}`);
-  if (result.status) lines.push(`**Status:** ${result.status}`);
-  if (result.sources?.length) lines.push(`**Organizer:** ${result.sources.join(', ')}`);
-  if (result.formats?.length) lines.push(`**Format:** ${result.formats.join(', ')}`);
-  if (result.types?.length) lines.push(`**Type:** ${result.types.join(', ')}`);
-  if (result.countries?.length) lines.push(`**Countries:** ${result.countries.join(', ')}`);
-  if (result.cities?.length) lines.push(`**Cities:** ${result.cities.join(', ')}`);
+  if (result.status) lines.push(`**Status:** ${escapeMarkdownInline(result.status)}`);
+  if (result.sources?.length)
+    lines.push(`**Organizer:** ${escapeMarkdownInline(result.sources.join(', '))}`);
+  if (result.formats?.length)
+    lines.push(`**Format:** ${escapeMarkdownInline(result.formats.join(', '))}`);
+  if (result.types?.length)
+    lines.push(`**Type:** ${escapeMarkdownInline(result.types.join(', '))}`);
+  if (result.countries?.length)
+    lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.cities?.length)
+    lines.push(`**Cities:** ${escapeMarkdownInline(result.cities.join(', '))}`);
   if (result.careerCategories?.length) {
-    lines.push(`**Career category:** ${result.careerCategories.join(', ')}`);
+    lines.push(`**Career category:** ${escapeMarkdownInline(result.careerCategories.join(', '))}`);
   }
-  if (result.themes?.length) lines.push(`**Themes:** ${result.themes.join(', ')}`);
-  if (result.languages?.length) lines.push(`**Languages:** ${result.languages.join(', ')}`);
+  if (result.themes?.length)
+    lines.push(`**Themes:** ${escapeMarkdownInline(result.themes.join(', '))}`);
+  if (result.languages?.length)
+    lines.push(`**Languages:** ${escapeMarkdownInline(result.languages.join(', '))}`);
   if (result.trainingLanguages?.length) {
-    lines.push(`**Taught in:** ${result.trainingLanguages.join(', ')}`);
+    lines.push(`**Taught in:** ${escapeMarkdownInline(result.trainingLanguages.join(', '))}`);
   }
-  if (result.dateStart) lines.push(`**Starts:** ${result.dateStart}`);
-  if (result.dateEnd) lines.push(`**Ends:** ${result.dateEnd}`);
-  if (result.dateRegistration) lines.push(`**Registration deadline:** ${result.dateRegistration}`);
-  if (result.dateCreated) lines.push(`**Indexed:** ${result.dateCreated}`);
-  if (result.cost) lines.push(`**Cost:** ${result.cost}`);
+  if (result.dateStart) lines.push(`**Starts:** ${escapeMarkdownInline(result.dateStart)}`);
+  if (result.dateEnd) lines.push(`**Ends:** ${escapeMarkdownInline(result.dateEnd)}`);
+  if (result.dateRegistration)
+    lines.push(`**Registration deadline:** ${escapeMarkdownInline(result.dateRegistration)}`);
+  if (result.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(result.dateCreated)}`);
+  if (result.cost) lines.push(`**Cost:** ${escapeMarkdownInline(result.cost)}`);
   if (result.feeInformation) lines.push(`**Fee information:** ${result.feeInformation}`);
-  if (result.eventUrl) lines.push(`**Event URL:** ${result.eventUrl}`);
-  if (result.urlAlias) lines.push(`**URL:** ${result.urlAlias}`);
-  if (result.url) lines.push(`**Node URL:** ${result.url}`);
+  if (result.eventUrl)
+    lines.push(`**Event URL:** ${markdownLink(result.eventUrl, result.eventUrl)}`);
+  if (result.urlAlias) lines.push(`**URL:** ${markdownLink(result.urlAlias, result.urlAlias)}`);
+  if (result.url) lines.push(`**Node URL:** ${markdownLink(result.url, result.url)}`);
   if (result.body) lines.push(`\n## Description\n\n${result.body}`);
   if (result.howToRegister) lines.push(`\n## How to register\n\n${result.howToRegister}`);
   return [{ type: 'text' as const, text: lines.join('\n') }];

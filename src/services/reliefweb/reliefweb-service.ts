@@ -89,6 +89,8 @@ const JOB_LIST_FIELDS = [
 ];
 
 const TRAINING_LIST_FIELDS = [
+  'cost',
+  'training_language.code',
   'id',
   'title',
   'date.start',
@@ -167,7 +169,7 @@ export class ReliefWebService {
     ctx: Context,
   ): Promise<RawRecord<T> | null> {
     const appName = getServerConfig().appName;
-    const url = `${BASE_URL}/${contentType}/${id}?appname=${encodeURIComponent(appName)}&profile=${profile}`;
+    const url = `${BASE_URL}/${contentType}/${id}?appname=${encodeURIComponent(appName)}&profile=${profile}${contentType === 'disasters' ? '&preset=analysis' : ''}`;
 
     return withRetry(
       async () => {
@@ -281,7 +283,8 @@ export class ReliefWebService {
 
     const conditions: FilterCondition[] = [];
     if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
-    if (params.disasterId) conditions.push({ field: 'disaster.id', value: params.disasterId });
+    if (params.disasterId !== undefined)
+      conditions.push({ field: 'disaster.id', value: params.disasterId });
     if (params.format) conditions.push({ field: 'format.name', value: params.format });
     if (params.theme) conditions.push({ field: 'theme.name', value: params.theme });
     if (params.language) conditions.push({ field: 'language.code', value: params.language });
@@ -528,6 +531,8 @@ export class ReliefWebService {
 
   async searchTraining(
     params: {
+      cost?: string;
+      trainingLanguage?: string;
       text?: string;
       country?: string;
       source?: string;
@@ -546,6 +551,9 @@ export class ReliefWebService {
     ctx.log.debug('searchTraining', { params });
 
     const conditions: FilterCondition[] = [];
+    if (params.cost) conditions.push({ field: 'cost', value: params.cost });
+    if (params.trainingLanguage)
+      conditions.push({ field: 'training_language.code', value: params.trainingLanguage });
     if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
     if (params.source) conditions.push({ field: 'source.shortname', value: params.source });
     if (params.format) conditions.push({ field: 'format.name', value: params.format });
@@ -783,6 +791,10 @@ function normalizeJobDetail(f: RawJobFields, id: number): JobDetail {
 
 function normalizeTrainingSummary(f: RawTrainingFields, id: number): TrainingSummary {
   const r: TrainingSummary = { id: f.id ?? id, title: f.title ?? '(untitled)' };
+  if (f.cost) r.cost = f.cost;
+  if (f.training_language?.length) {
+    r.trainingLanguages = f.training_language.map((l) => l.code ?? '').filter(Boolean);
+  }
   if (f.date?.start) r.dateStart = f.date.start;
   if (f.date?.end) r.dateEnd = f.date.end;
   if (f.date?.registration) r.dateRegistration = f.date.registration;
@@ -804,13 +816,9 @@ function normalizeTrainingDetail(f: RawTrainingFields, id: number): TrainingDeta
   if (f.date?.created) r.dateCreated = f.date.created;
   if (f.city?.length) r.cities = f.city.map((c) => c.name ?? '').filter(Boolean);
   if (f.type?.length) r.types = f.type.map((t) => t.name ?? '').filter(Boolean);
-  if (f.training_language?.length) {
-    r.trainingLanguages = f.training_language.map((l) => l.code ?? '').filter(Boolean);
-  }
   if (f.body) r.body = f.body;
   if (f.how_to_register) r.howToRegister = f.how_to_register;
   if (f.event_url) r.eventUrl = f.event_url;
-  if (f.cost) r.cost = f.cost;
   if (f.fee_information) r.feeInformation = f.fee_information;
   if (f.url) r.url = f.url;
   return r;

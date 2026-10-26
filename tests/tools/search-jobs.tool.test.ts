@@ -31,7 +31,7 @@ describe('reliefwebSearchJobs', () => {
         countries: ['Afghanistan'],
         themes: ['Coordination'],
         types: ['International'],
-        careerCategories: ['Programme and Project Management'],
+        careerCategories: ['Program/Project Management'],
         experienceLevels: ['5-9 years'],
         urlAlias: 'https://reliefweb.int/job/test',
       },
@@ -40,7 +40,7 @@ describe('reliefwebSearchJobs', () => {
 
     const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
     const input = reliefwebSearchJobs.input.parse({
-      career_category: 'Programme and Project Management',
+      career_category: 'Program/Project Management',
     });
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
@@ -156,7 +156,7 @@ describe('reliefwebSearchJobs', () => {
           title: 'Field Coordinator',
           sources: ['WFP'],
           countries: ['Kenya'],
-          careerCategories: ['Logistics and Telecommunications'],
+          careerCategories: ['Logistics/Procurement'],
           experienceLevels: ['3-4 years'],
           themes: ['Food and Nutrition'],
           types: ['International'],
@@ -166,7 +166,7 @@ describe('reliefwebSearchJobs', () => {
         },
       ],
       appliedFilters: {
-        careerCategory: 'Logistics and Telecommunications',
+        careerCategory: 'Logistics/Procurement',
         sort: 'date.created:desc',
         preset: 'latest',
         limit: 10,

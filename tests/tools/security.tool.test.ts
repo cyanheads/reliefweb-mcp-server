@@ -163,8 +163,8 @@ describe('security: Zod schema rejects out-of-range numeric inputs', () => {
     expect(() => reliefwebSearchReports.input.parse({ limit: 0 })).toThrow();
   });
 
-  it('search_reports: limit above maximum (1001) throws ZodError', () => {
-    expect(() => reliefwebSearchReports.input.parse({ limit: 1001 })).toThrow();
+  it('search_reports: over-cap integers retain the request for disclosed clamping', () => {
+    expect(reliefwebSearchReports.input.parse({ limit: 1001 }).limit).toBe(1001);
   });
 
   it('search_reports: negative offset throws ZodError', () => {
@@ -175,8 +175,8 @@ describe('security: Zod schema rejects out-of-range numeric inputs', () => {
     expect(() => reliefwebSearchDisasters.input.parse({ limit: 0 })).toThrow();
   });
 
-  it('search_disasters: limit above maximum (1001) throws ZodError', () => {
-    expect(() => reliefwebSearchDisasters.input.parse({ limit: 1001 })).toThrow();
+  it('search_disasters: over-cap integers retain the request for disclosed clamping', () => {
+    expect(reliefwebSearchDisasters.input.parse({ limit: 1001 }).limit).toBe(1001);
   });
 
   it('search_jobs: limit below minimum (0) throws ZodError', () => {

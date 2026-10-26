@@ -6,6 +6,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 import {
   documentOrOutline,
   OUTLINE_KIND,
@@ -42,7 +43,7 @@ const ReportFields = z.object({
   body: z
     .string()
     .describe(
-      'Full report body text (HTML). Present for most reports; absent for binary-only documents.',
+      'Full report body text (Markdown). Present for most reports; absent for binary-only documents.',
     ),
 });
 
@@ -104,20 +105,29 @@ export const reliefwebGetReport = tool('reliefweb_get_report', {
  * arms.
  */
 function renderReport(result: z.infer<typeof ReportOutput>) {
-  const lines: string[] = [`# ${result.title ?? `Report ${result.id}`}`];
+  const lines: string[] = [`**${escapeMarkdownInline(result.title ?? `Report ${result.id}`)}**`];
   lines.push(`**ID:** ${result.id}`);
   lines.push(`**Mode:** ${result.kind}`);
-  if (result.dateOriginal) lines.push(`**Published:** ${result.dateOriginal}`);
-  if (result.dateCreated) lines.push(`**Indexed:** ${result.dateCreated}`);
-  if (result.primaryCountry) lines.push(`**Primary country:** ${result.primaryCountry}`);
-  if (result.countries?.length) lines.push(`**Countries:** ${result.countries.join(', ')}`);
-  if (result.sources?.length) lines.push(`**Sources:** ${result.sources.join(', ')}`);
-  if (result.formats?.length) lines.push(`**Format:** ${result.formats.join(', ')}`);
-  if (result.themes?.length) lines.push(`**Themes:** ${result.themes.join(', ')}`);
-  if (result.languages?.length) lines.push(`**Languages:** ${result.languages.join(', ')}`);
-  if (result.headlineSummary) lines.push(`\n**Summary:** ${result.headlineSummary}`);
-  if (result.urlAlias) lines.push(`**URL:** ${result.urlAlias}`);
-  if (result.fileUrls?.length) lines.push(`**Files:** ${result.fileUrls.join(', ')}`);
+  if (result.dateOriginal)
+    lines.push(`**Published:** ${escapeMarkdownInline(result.dateOriginal)}`);
+  if (result.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(result.dateCreated)}`);
+  if (result.primaryCountry)
+    lines.push(`**Primary country:** ${escapeMarkdownInline(result.primaryCountry)}`);
+  if (result.countries?.length)
+    lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.sources?.length)
+    lines.push(`**Sources:** ${escapeMarkdownInline(result.sources.join(', '))}`);
+  if (result.formats?.length)
+    lines.push(`**Format:** ${escapeMarkdownInline(result.formats.join(', '))}`);
+  if (result.themes?.length)
+    lines.push(`**Themes:** ${escapeMarkdownInline(result.themes.join(', '))}`);
+  if (result.languages?.length)
+    lines.push(`**Languages:** ${escapeMarkdownInline(result.languages.join(', '))}`);
+  if (result.headlineSummary)
+    lines.push(`\n**Summary:** ${escapeMarkdownInline(result.headlineSummary)}`);
+  if (result.urlAlias) lines.push(`**URL:** ${markdownLink(result.urlAlias, result.urlAlias)}`);
+  if (result.fileUrls?.length)
+    lines.push(`**Files:** ${result.fileUrls.map((url) => markdownLink(url, url)).join(', ')}`);
   if (result.body) lines.push(`\n---\n\n${result.body}`);
   return [{ type: 'text' as const, text: lines.join('\n') }];
 }

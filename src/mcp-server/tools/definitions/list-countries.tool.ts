@@ -5,7 +5,10 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import {
   isRejectedQueryError,
@@ -27,14 +30,10 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       .describe(
         'When true, filters to countries with an active humanitarian situation (status ongoing). Default false returns all countries.',
       ),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(1000)
+    limit: limitSchema(SEARCH_MAX_LIMIT)
       .default(100)
       .describe(
-        'Number of results to return (1–1000, default 100). Each call counts against the 1,000-calls/day quota.',
+        'Number of results to return (1–1000, default 100). Larger integers are clamped to 1000 with a notice when clamping is enabled; otherwise they are rejected. Each call counts against the 1,000-calls/day quota.',
       ),
     offset: z
       .number()
@@ -71,13 +70,14 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       )
       .describe('Countries tracked by ReliefWeb.'),
   }),
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
   enrichment: {
     totalCount: z.number().describe('Total countries matching the filter before pagination.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
+        'Discloses requested and applied limits when clamped. For empty pages, names the match count and last reachable offset when records matched; otherwise echoes filters and suggests how to broaden.',
       ),
   },
   errors: [
@@ -97,7 +97,14 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
     },
   ],
 
-  async handler(input, ctx) {
+  async handler(requestedInput, ctx) {
+    const { limit, notice } = resolveLimit(
+      requestedInput.limit,
+      SEARCH_MAX_LIMIT,
+      'reliefweb_list_countries',
+      ctx,
+    );
+    const input = { ...requestedInput, limit };
     ctx.log.info('reliefweb_list_countries', {
       crisisOnly: input.crisis_only,
       limit: input.limit,
@@ -128,7 +135,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
     ctx.enrich.total(result.totalCount);
 
     if (result.items.length === 0 && result.totalCount > 0) {
-      ctx.enrich.notice(
+      notice(
         pagedPastEndNotice({
           subject: 'countries',
           offset: input.offset,
@@ -137,7 +144,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
         }),
       );
     } else if (result.items.length === 0) {
-      ctx.enrich.notice(
+      notice(
         input.crisis_only
           ? 'No countries with an active humanitarian situation found (crisis_only=true). Set crisis_only=false to list all tracked countries.'
           : 'No countries returned. ReliefWeb always tracks a non-empty country list, so an unfiltered zero-match result points at an upstream problem — retry, and treat a repeat as a service failure rather than a query to correct.',
@@ -150,11 +157,11 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
   format: (result) => {
     const lines: string[] = [];
     for (const item of result.items) {
-      const parts: string[] = [`**${item.name}**`];
-      if (item.iso3) parts.push(`(${item.iso3})`);
+      const parts: string[] = [`**${escapeMarkdownInline(item.name)}**`];
+      if (item.iso3) parts.push(`(${escapeMarkdownInline(item.iso3)})`);
       parts.push(`[${item.id}]`);
-      if (item.status) parts.push(`— ${item.status}`);
-      if (item.urlAlias) parts.push(`— ${item.urlAlias}`);
+      if (item.status) parts.push(`— ${escapeMarkdownInline(item.status)}`);
+      if (item.urlAlias) parts.push(`— ${markdownLink(item.urlAlias, item.urlAlias)}`);
       lines.push(`- ${parts.join(' ')}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];

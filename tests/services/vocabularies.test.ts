@@ -9,6 +9,7 @@ import {
   DISASTER_STATUSES,
   REPORT_FORMATS,
   resolveVocabulary,
+  TRAINING_COSTS,
   unknownValueMessage,
 } from '@/services/reliefweb/vocabularies.js';
 
@@ -133,6 +134,16 @@ describe('unknownValueMessage', () => {
 });
 
 describe('vocabularies', () => {
+  it('resolves training costs without changing listing-language semantics', () => {
+    expect(TRAINING_COSTS).toEqual(['free', 'fee-based']);
+    expect(resolveVocabulary(' Fee Based ', TRAINING_COSTS)).toEqual({
+      value: 'fee-based',
+      unmatched: [],
+    });
+    expect(resolveVocabulary('FREE', TRAINING_COSTS)).toEqual({ value: 'free', unmatched: [] });
+    expect(resolveVocabulary(' ', TRAINING_COSTS)).toEqual({ unmatched: [] });
+    expect(resolveVocabulary('paid', TRAINING_COSTS)).toEqual({ unmatched: ['paid'] });
+  });
   it('drops the format values ReliefWeb never returns and carries UN Document', () => {
     expect(REPORT_FORMATS).toContain('UN Document');
     expect(REPORT_FORMATS).not.toContain('Policy Document');

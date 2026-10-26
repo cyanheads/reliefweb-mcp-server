@@ -7,6 +7,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 import {
   documentOrOutline,
   OUTLINE_NOTICE,
@@ -14,7 +15,10 @@ import {
   renderOutline,
   sectionsInput,
 } from '@/mcp-server/tools/document-sections.js';
+import { resolveLimit } from '@/mcp-server/tools/limits.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import {
+  ARCHIVE_MAX_LIMIT,
   ARCHIVE_PAGE,
   archiveInput,
   archivePage,
@@ -114,6 +118,13 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
     archive: archiveInput('country'),
   }),
   output: CountryOutput,
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
+  enrichment: {
+    notice: z
+      .string()
+      .optional()
+      .describe('Requested and applied archive limits when the page size was clamped.'),
+  },
   errors: [
     {
       reason: 'not_found',
@@ -143,7 +154,13 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
     });
 
     if (input.archive) {
-      const { list, offset, limit } = input.archive;
+      const { list, offset } = input.archive;
+      const { limit } = resolveLimit(
+        input.archive.limit,
+        ARCHIVE_MAX_LIMIT,
+        'reliefweb_get_country',
+        ctx,
+      );
       const found = await getReliefWebService().getCountryArchive(iso3, list, ctx);
       if (!found) {
         throw ctx.fail(
@@ -182,12 +199,12 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
  * arm.
  */
 function renderCountry(result: z.infer<typeof CountryOutput>) {
-  const lines: string[] = [`# ${result.name ?? `Country ${result.id}`}`];
+  const lines: string[] = [`**${escapeMarkdownInline(result.name ?? `Country ${result.id}`)}**`];
   lines.push(`**ID:** ${result.id}`);
   lines.push(`**Mode:** ${result.kind}`);
-  if (result.iso3) lines.push(`**ISO3:** ${result.iso3}`);
-  if (result.status) lines.push(`**Status:** ${result.status}`);
-  if (result.urlAlias) lines.push(`**URL:** ${result.urlAlias}`);
+  if (result.iso3) lines.push(`**ISO3:** ${escapeMarkdownInline(result.iso3)}`);
+  if (result.status) lines.push(`**Status:** ${escapeMarkdownInline(result.status)}`);
+  if (result.urlAlias) lines.push(`**URL:** ${markdownLink(result.urlAlias, result.urlAlias)}`);
   if (result.profileOverview) lines.push(`\n## Overview\n\n${result.profileOverview}`);
   lines.push(...curatedLinkLines(result));
   return [{ type: 'text' as const, text: lines.join('\n') }];

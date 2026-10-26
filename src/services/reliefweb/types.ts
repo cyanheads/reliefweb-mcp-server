@@ -266,6 +266,7 @@ export interface JobDetail extends JobSummary {
 
 export interface TrainingSummary {
   careerCategories?: string[];
+  cost?: string;
   countries?: string[];
   dateEnd?: string;
   dateRegistration?: string;
@@ -276,19 +277,18 @@ export interface TrainingSummary {
   sources?: string[];
   themes?: string[];
   title: string;
+  trainingLanguages?: string[];
   urlAlias?: string;
 }
 
 export interface TrainingDetail extends TrainingSummary {
   body?: string;
   cities?: string[];
-  cost?: string;
   dateCreated?: string;
   eventUrl?: string;
   feeInformation?: string;
   howToRegister?: string;
   status?: string;
-  trainingLanguages?: string[];
   types?: string[];
   url?: string;
 }

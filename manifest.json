@@ -20,7 +20,8 @@
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
         "NODE_ENV": "production",
-        "RELIEFWEB_APP_NAME": "${user_config.reliefweb_app_name}"
+        "RELIEFWEB_APP_NAME": "${user_config.reliefweb_app_name}",
+        "RELIEFWEB_CLAMP_LIMITS": "${user_config.reliefweb_clamp_limits}"
       }
     }
   },
@@ -30,6 +31,13 @@
   "tools_generated": true,
   "prompts_generated": true,
   "user_config": {
+    "reliefweb_clamp_limits": {
+      "type": "boolean",
+      "title": "Clamp page limits",
+      "description": "Apply the supported maximum to over-cap page limits and report the applied value.",
+      "default": true,
+      "required": false
+    },
     "reliefweb_app_name": {
       "type": "string",
       "title": "ReliefWeb App Name",

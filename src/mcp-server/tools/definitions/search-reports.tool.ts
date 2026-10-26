@@ -5,10 +5,14 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import {
   DATE_BOUND_FORMAT_MESSAGE,
   DATE_BOUND_PATTERN,
+  InvalidDateBoundError,
   resolveDateBound,
 } from '@/services/reliefweb/date-utils.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
@@ -119,14 +123,10 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .describe(
         'Raw ReliefWeb filter object for compound conditions not covered by named params. Example: {"operator": "AND", "conditions": [{"field": "format.name", "value": "Map"}, {"field": "language.code", "value": "fr"}]}.',
       ),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(1000)
+    limit: limitSchema(SEARCH_MAX_LIMIT)
       .default(10)
       .describe(
-        'Number of results to return (1–1000, default 10). Use a smaller value for targeted lookups; larger for bulk research. Each call counts against the 1,000-calls/day quota.',
+        'Number of results to return (1–1000, default 10). Larger integers are clamped to 1000 with a notice when clamping is enabled; otherwise they are rejected. Use a smaller value for targeted lookups; larger for bulk research. Each call counts against the 1,000-calls/day quota.',
       ),
     offset: z
       .number()
@@ -202,16 +202,24 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         'The resolved filter set the query actually ran with, after normalization and defaults. Echoes back so the agent can confirm how its inputs were interpreted.',
       ),
   }),
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
   enrichment: {
     totalCount: z.number().describe('Total reports matching the query before pagination.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
+        'Discloses requested and applied limits when clamped, an ignored empty raw filter, and empty-page guidance with the match count and last reachable offset or suggestions to broaden the search.',
       ),
   },
   errors: [
+    {
+      reason: 'invalid_date',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A date bound contains impossible calendar or time components.',
+      recovery:
+        'Correct the named field using a valid calendar date or ISO 8601 datetime, then call again.',
+    },
     {
       reason: 'unknown_format',
       code: JsonRpcErrorCode.InvalidParams,
@@ -222,9 +230,9 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
-      when: 'ReliefWeb rejected the query — an unrecognized sort field, an invalid raw filter object, or a malformed date.',
+      when: 'ReliefWeb rejected the query — possible causes include malformed text, an unrecognized sort field, an invalid raw filter object, or a malformed date.',
       recovery:
-        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort and filter fields must be real ReliefWeb field names, and dates take a calendar date or a full ISO 8601 datetime.',
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort and filter fields must be real ReliefWeb field names, and dates take a calendar date or a full ISO 8601 datetime. Malformed text is another possible cause: use plain keywords, balanced parentheses, and complete boolean expressions in text.',
     },
     {
       reason: 'upstream_error',
@@ -235,7 +243,14 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     },
   ],
 
-  async handler(input, ctx) {
+  async handler(requestedInput, ctx) {
+    const { limit, notice } = resolveLimit(
+      requestedInput.limit,
+      SEARCH_MAX_LIMIT,
+      'reliefweb_search_reports',
+      ctx,
+    );
+    const input = { ...requestedInput, limit };
     ctx.log.info('reliefweb_search_reports', {
       text: input.text,
       country: input.country,
@@ -243,8 +258,23 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     });
 
     const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
-    const dateFrom = resolveDateBound(input.date_from, 'from');
-    const dateTo = resolveDateBound(input.date_to, 'to');
+    const resolveBound = (field: 'date_from' | 'date_to', bound: 'from' | 'to') => {
+      try {
+        return resolveDateBound(input[field], bound);
+      } catch (error) {
+        if (error instanceof InvalidDateBoundError) {
+          throw ctx.fail(
+            'invalid_date',
+            `Invalid ${field} value "${error.value}". ${DATE_BOUND_FORMAT_MESSAGE}`,
+          );
+        }
+        throw error;
+      }
+    };
+    const dateFrom = resolveBound('date_from', 'from');
+    const dateTo = resolveBound('date_to', 'to');
+    const emptyRawFilter = input.filter != null && Object.keys(input.filter).length === 0;
+    const rawFilter = emptyRawFilter ? undefined : input.filter;
 
     const format = resolveVocabulary(input.format, REPORT_FORMATS);
     if (format.unmatched.length > 0) {
@@ -264,7 +294,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       ...(input.source?.trim() ? { source: input.source } : {}),
       ...(dateFrom ? { dateFrom } : {}),
       ...(dateTo ? { dateTo } : {}),
-      ...(input.filter != null ? { rawFilter: true } : {}),
+      ...(rawFilter != null ? { rawFilter: true } : {}),
       sort: input.sort?.trim() || 'date.original:desc',
       /**
        * Every preset returns the identical report set — the corpus carries no archived
@@ -289,7 +319,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
-          ...(input.filter != null ? { rawFilter: input.filter as FilterCondition } : {}),
+          ...(rawFilter != null ? { rawFilter: rawFilter as FilterCondition } : {}),
           limit: input.limit,
           offset: input.offset,
         },
@@ -310,9 +340,11 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       });
 
     ctx.enrich.total(result.totalCount);
+    const notices: string[] = [];
+    if (emptyRawFilter) notices.push('Ignored empty filter: no raw conditions were supplied.');
 
     if (result.items.length === 0 && result.totalCount > 0) {
-      ctx.enrich.notice(
+      notices.push(
         pagedPastEndNotice({
           subject: 'reports',
           offset: input.offset,
@@ -331,31 +363,40 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       if (input.source) filters.push(`source="${input.source}"`);
       if (dateFrom) filters.push(`date_from=${dateFrom}`);
       if (dateTo) filters.push(`date_to=${dateTo}`);
-      ctx.enrich.notice(
+      notices.push(
         `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broadening the search by removing filters, using different keywords, or checking country codes.',
       );
     }
 
+    if (notices.length > 0) notice(notices.join(' '));
     return { items: result.items, appliedFilters };
   },
 
   format: (result) => {
     const lines: string[] = [renderAppliedFilters(result.appliedFilters)];
     for (const item of result.items) {
-      lines.push(`\n## ${item.title}`);
+      lines.push(`\n**${escapeMarkdownInline(item.title)}**`);
       lines.push(`**ID:** ${item.id}`);
-      if (item.dateOriginal) lines.push(`**Published:** ${item.dateOriginal}`);
-      if (item.dateCreated) lines.push(`**Indexed:** ${item.dateCreated}`);
-      if (item.primaryCountry) lines.push(`**Primary country:** ${item.primaryCountry}`);
-      if (item.countries?.length) lines.push(`**Countries:** ${item.countries.join(', ')}`);
-      if (item.sources?.length) lines.push(`**Sources:** ${item.sources.join(', ')}`);
-      if (item.formats?.length) lines.push(`**Format:** ${item.formats.join(', ')}`);
-      if (item.themes?.length) lines.push(`**Themes:** ${item.themes.join(', ')}`);
-      if (item.languages?.length) lines.push(`**Languages:** ${item.languages.join(', ')}`);
-      if (item.headlineSummary) lines.push(`\n${item.headlineSummary}`);
-      if (item.urlAlias) lines.push(`**URL:** ${item.urlAlias}`);
-      if (item.fileUrls?.length) lines.push(`**Files:** ${item.fileUrls.join(', ')}`);
+      if (item.dateOriginal)
+        lines.push(`**Published:** ${escapeMarkdownInline(item.dateOriginal)}`);
+      if (item.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(item.dateCreated)}`);
+      if (item.primaryCountry)
+        lines.push(`**Primary country:** ${escapeMarkdownInline(item.primaryCountry)}`);
+      if (item.countries?.length)
+        lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
+      if (item.sources?.length)
+        lines.push(`**Sources:** ${escapeMarkdownInline(item.sources.join(', '))}`);
+      if (item.formats?.length)
+        lines.push(`**Format:** ${escapeMarkdownInline(item.formats.join(', '))}`);
+      if (item.themes?.length)
+        lines.push(`**Themes:** ${escapeMarkdownInline(item.themes.join(', '))}`);
+      if (item.languages?.length)
+        lines.push(`**Languages:** ${escapeMarkdownInline(item.languages.join(', '))}`);
+      if (item.headlineSummary) lines.push(`\n${escapeMarkdownInline(item.headlineSummary)}`);
+      if (item.urlAlias) lines.push(`**URL:** ${markdownLink(item.urlAlias, item.urlAlias)}`);
+      if (item.fileUrls?.length)
+        lines.push(`**Files:** ${item.fileUrls.map((url) => markdownLink(url, url)).join(', ')}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },
@@ -383,16 +424,21 @@ function renderAppliedFilters(f: {
   offset: number;
 }): string {
   const parts: string[] = [];
-  if (f.text != null) parts.push(`text="${f.text}"`);
-  if (f.country != null) parts.push(`country=${f.country}`);
+  if (f.text != null) parts.push(`text="${escapeMarkdownInline(f.text)}"`);
+  if (f.country != null) parts.push(`country=${escapeMarkdownInline(f.country)}`);
   if (f.disasterId != null) parts.push(`disasterId=${f.disasterId}`);
   if (f.format != null) parts.push(`format="${f.format}"`);
-  if (f.theme != null) parts.push(`theme="${f.theme}"`);
-  if (f.language != null) parts.push(`language=${f.language}`);
-  if (f.source != null) parts.push(`source="${f.source}"`);
+  if (f.theme != null) parts.push(`theme="${escapeMarkdownInline(f.theme)}"`);
+  if (f.language != null) parts.push(`language=${escapeMarkdownInline(f.language)}`);
+  if (f.source != null) parts.push(`source="${escapeMarkdownInline(f.source)}"`);
   if (f.dateFrom != null) parts.push(`dateFrom=${f.dateFrom}`);
   if (f.dateTo != null) parts.push(`dateTo=${f.dateTo}`);
   if (f.rawFilter != null) parts.push(`rawFilter=${f.rawFilter}`);
-  parts.push(`sort=${f.sort}`, `preset=${f.preset}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  parts.push(
+    `sort=${escapeMarkdownInline(f.sort)}`,
+    `preset=${f.preset}`,
+    `limit=${f.limit}`,
+    `offset=${f.offset}`,
+  );
   return `**Applied filters:** ${parts.join(', ')}`;
 }

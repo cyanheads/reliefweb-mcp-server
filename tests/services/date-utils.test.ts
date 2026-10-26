@@ -8,10 +8,37 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   currentDateBound,
   DATE_BOUND_PATTERN,
+  InvalidDateBoundError,
   resolveDateBound,
 } from '@/services/reliefweb/date-utils.js';
 
 describe('resolveDateBound', () => {
+  it.each([
+    '2026-02-30',
+    '2025-02-29T00:00:00Z',
+    '2026-13-01',
+    '2026-00-01',
+    '2026-01-00',
+    '1900-02-29',
+    '2026-13-45T99:99:99Z',
+    '2026-04-31T00:00Z',
+    '2026-01-01T24:01Z',
+    '2026-01-01T24:00:01Z',
+    '2026-01-01T24:00:00.001Z',
+    '2026-01-01T00:60Z',
+    '2026-01-01T00:00:60Z',
+    '2026-01-01T00:00+24:00',
+    '2026-01-01T00:00+00:60',
+  ])('rejects impossible components in %s', (input) => {
+    for (const bound of ['from', 'to'] as const) {
+      expect(() => resolveDateBound(input, bound)).toThrow(InvalidDateBoundError);
+      try {
+        resolveDateBound(input, bound);
+      } catch (error) {
+        expect(error).toMatchObject({ value: input, name: 'InvalidDateBoundError' });
+      }
+    }
+  });
   it('resolves a bare calendar date to start of day on a lower bound', () => {
     expect(resolveDateBound('2026-07-01', 'from')).toBe('2026-07-01T00:00:00+00:00');
   });
@@ -44,8 +71,16 @@ describe('resolveDateBound', () => {
     expect(resolveDateBound(input, 'from')).toBe(expected);
   });
 
-  it('passes a pattern-shaped value that is not a real instant through for ReliefWeb to name', () => {
-    expect(resolveDateBound('2026-13-45T99:99:99Z', 'from')).toBe('2026-13-45T99:99:99Z');
+  it.each([
+    ['0000-02-29', '0000-02-29T00:00:00+00:00'],
+    ['2000-02-29', '2000-02-29T00:00:00+00:00'],
+    ['0099-01-01T00:00Z', '0099-01-01T00:00:00+00:00'],
+    ['2028-02-29T24:00:00.000Z', '2028-03-01T00:00:00+00:00'],
+    ['2026-07-01T24:00', '2026-07-02T00:00:00+00:00'],
+    ['2026-07-01T24:00:00+23:59', '2026-07-01T00:01:00+00:00'],
+    ['2026-07-01T00:00-2359', '2026-07-01T23:59:00+00:00'],
+  ])('preserves valid calendar and end-of-day spelling %s', (input, expected) => {
+    expect(resolveDateBound(input, 'from')).toBe(expected);
   });
 
   it('trims surrounding whitespace before resolving', () => {

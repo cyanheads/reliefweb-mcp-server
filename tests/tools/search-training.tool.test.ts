@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchTraining } from '@/mcp-server/tools/definitions/search-training.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -14,6 +14,109 @@ const mockSearchTraining = vi.fn();
 vi.mock('@/services/reliefweb/reliefweb-service.js', () => ({
   getReliefWebService: () => ({ searchTraining: mockSearchTraining }),
 }));
+
+describe('training cost and delivery language', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+  });
+
+  it.each(['free', 'fee-based', ' FEE BASED '])(
+    'resolves %s and keeps listing and delivery languages distinct',
+    async (cost) => {
+      mockSearchTraining.mockResolvedValue({
+        items: [
+          {
+            id: 3678550,
+            title: 'Bilingual course',
+            cost: cost === 'free' ? 'free' : 'fee-based',
+            languages: ['en'],
+            trainingLanguages: ['en', 'fr'],
+          },
+        ],
+        totalCount: 1,
+      });
+      const result = await runToolContract(reliefwebSearchTraining, {
+        cost,
+        language: 'en',
+        training_language: 'fr',
+        include_archived: true,
+      });
+      const canonical = cost === 'free' ? 'free' : 'fee-based';
+      expect(result.isError).not.toBe(true);
+      expect(mockSearchTraining.mock.lastCall?.[0]).toMatchObject({
+        cost: canonical,
+        language: 'en',
+        trainingLanguage: 'fr',
+      });
+      expect(result.structuredContent).toMatchObject({
+        items: [{ cost: canonical, languages: ['en'], trainingLanguages: ['en', 'fr'] }],
+        appliedFilters: { cost: canonical, language: 'en', trainingLanguage: 'fr' },
+      });
+      const text = JSON.stringify(result.content);
+      expect(text).toContain(`cost=${canonical}`);
+      expect(text).toContain('trainingLanguage=fr');
+      expect(text).toContain('Listing languages');
+      expect(text).toContain('Training languages');
+      expect(text).toContain('en, fr');
+    },
+  );
+
+  it('rejects unknown cost locally and lists valid choices on both error surfaces', async () => {
+    const result = await runToolContract(reliefwebSearchTraining, { cost: 'paid' });
+    expect(result.structuredContent).toMatchObject({
+      error: { code: JsonRpcErrorCode.InvalidParams, data: { reason: 'unknown_cost' } },
+    });
+    for (const text of [JSON.stringify(result.structuredContent), JSON.stringify(result.content)]) {
+      expect(text).toContain('paid');
+      expect(text).toContain('free');
+      expect(text).toContain('fee-based');
+    }
+    expect(mockSearchTraining).not.toHaveBeenCalled();
+  });
+
+  it('omits blank filters and sparse summary metadata on both surfaces', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [{ id: 1, title: 'Sparse' }], totalCount: 1 });
+    const result = await runToolContract(reliefwebSearchTraining, {
+      cost: '  ',
+      training_language: ' ',
+      include_archived: true,
+    });
+    expect(mockSearchTraining.mock.lastCall?.[0]).not.toHaveProperty('cost');
+    expect(mockSearchTraining.mock.lastCall?.[0]).not.toHaveProperty('trainingLanguage');
+    expect(result.structuredContent).not.toHaveProperty('appliedFilters.cost');
+    expect(result.structuredContent).not.toHaveProperty('appliedFilters.trainingLanguage');
+    expect(result.structuredContent).not.toHaveProperty('items.0.cost');
+    expect(result.structuredContent).not.toHaveProperty('items.0.trainingLanguages');
+    expect(JSON.stringify(result.content)).not.toContain('**Cost:**');
+    expect(JSON.stringify(result.content)).not.toContain('Training languages');
+  });
+
+  it('includes cost and delivery-language guidance for no matches on both surfaces', async () => {
+    const result = await runToolContract(reliefwebSearchTraining, {
+      cost: 'FREE',
+      training_language: 'fr',
+    });
+    for (const text of [JSON.stringify(result.structuredContent), JSON.stringify(result.content)]) {
+      expect(text).toContain('cost=free');
+      expect(text).toContain('training_language=fr');
+      expect(text).toContain('remove the cost or training_language filter');
+    }
+  });
+
+  it('keeps past-end guidance with the new filter echo', async () => {
+    mockSearchTraining.mockResolvedValue({ items: [], totalCount: 12 });
+    const result = await runToolContract(reliefwebSearchTraining, {
+      cost: 'free',
+      training_language: 'fr',
+      offset: 100,
+    });
+    expect(result.structuredContent).toMatchObject({
+      appliedFilters: { cost: 'free', trainingLanguage: 'fr' },
+    });
+    expect(JSON.stringify(result.content)).toContain('past the end');
+  });
+});
 
 describe('reliefwebSearchTraining', () => {
   beforeEach(() => {
@@ -33,7 +136,7 @@ describe('reliefwebSearchTraining', () => {
         themes: ['Shelter and NFI'],
         formats: ['on-site'],
         languages: ['en'],
-        careerCategories: ['Programme and Project Management'],
+        careerCategories: ['Program/Project Management'],
         urlAlias: 'https://reliefweb.int/training/test',
       },
     ];
@@ -78,7 +181,7 @@ describe('reliefwebSearchTraining', () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       source: 'RedR',
-      career_category: 'Logistics and Telecommunications',
+      career_category: 'Logistics/Procurement',
       language: 'fr',
       date_start_to: '2024-12-31T00:00:00+00:00',
     });
@@ -86,7 +189,7 @@ describe('reliefwebSearchTraining', () => {
 
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('source="RedR"');
-    expect(notice).toContain('career_category="Logistics and Telecommunications"');
+    expect(notice).toContain('career_category="Logistics/Procurement"');
     expect(notice).toContain('language=fr');
     expect(notice).toContain('start_to=2024-12-31T00:00:00+00:00');
   });
@@ -189,7 +292,7 @@ describe('reliefwebSearchTraining', () => {
           sources: ['UNICEF'],
           formats: ['online'],
           countries: ['Somalia'],
-          careerCategories: ['Water Sanitation and Hygiene'],
+          careerCategories: ['Program/Project Management'],
           languages: ['en'],
           themes: ['Water Sanitation Hygiene'],
           dateStart: '2024-06-01T00:00:00+00:00',

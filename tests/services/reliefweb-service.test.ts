@@ -43,6 +43,193 @@ function makeService(): ReliefWebService {
 
 // ─── Issue #3: GET endpoint returns data array, not single object ─────────────
 
+describe('domain request regressions', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unmocked request'));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('preserves training detail cost and delivery language independently of listing language', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      makeOkResponse({
+        data: [
+          {
+            id: 1,
+            fields: {
+              title: 'Course',
+              cost: 'free',
+              language: [{ code: 'en' }],
+              training_language: [{ code: 'fr' }, {}, { code: 'en' }],
+              body: 'Body',
+            },
+          },
+        ],
+      }),
+    );
+    expect(await makeService().getTraining(1, createMockContext())).toEqual({
+      id: 1,
+      title: 'Course',
+      cost: 'free',
+      languages: ['en'],
+      trainingLanguages: ['fr', 'en'],
+      body: 'Body',
+    });
+  });
+
+  it.each(['detail', 'archive'])('uses analysis for disaster %s GETs', async (mode) => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      makeOkResponse({ data: [{ id: 1, fields: { name: 'Archived', status: 'alert-archive' } }] }),
+    );
+    const service = makeService();
+    if (mode === 'detail') await service.getDisaster(1, createMockContext());
+    else await service.getDisasterArchive(1, 'keyContent', createMockContext());
+    expect(new URL(String(vi.mocked(fetch).mock.calls[0]?.[0])).searchParams.get('preset')).toBe(
+      'analysis',
+    );
+  });
+
+  it.each([undefined, 0, -1])(
+    'preserves disaster ID %s with an empty result',
+    async (disasterId) => {
+      vi.mocked(fetch).mockResolvedValueOnce(makeOkResponse({ data: [], totalCount: 0 }));
+      const result = await makeService().searchReports(
+        { ...(disasterId !== undefined ? { disasterId } : {}) },
+        createMockContext(),
+      );
+      const query = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+      expect(query.filter).toEqual(
+        disasterId === undefined ? undefined : { field: 'disaster.id', value: disasterId },
+      );
+      expect(result).toEqual({ items: [], totalCount: 0 });
+    },
+  );
+
+  it('keeps nonempty raw filters nested with named conditions', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeOkResponse({ data: [], totalCount: 0 }));
+    await makeService().searchReports(
+      {
+        disasterId: 0,
+        rawFilter: {
+          operator: 'OR',
+          conditions: [
+            { field: 'country.iso3', value: 'SYR' },
+            { field: 'country.iso3', value: 'TUR' },
+          ],
+        },
+      },
+      createMockContext(),
+    );
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)).filter).toEqual({
+      operator: 'AND',
+      conditions: [
+        { field: 'disaster.id', value: 0 },
+        {
+          operator: 'OR',
+          conditions: [
+            { field: 'country.iso3', value: 'SYR' },
+            { field: 'country.iso3', value: 'TUR' },
+          ],
+        },
+      ],
+    });
+  });
+
+  it.each(['reports', 'countries'] as const)(
+    'keeps %s detail retrieval preset unchanged',
+    async (contentType) => {
+      vi.mocked(fetch).mockResolvedValueOnce(makeOkResponse({ data: [] }));
+      const service = makeService();
+      if (contentType === 'reports') await service.getReport(1, createMockContext());
+      else await service.getCountry('SYR', createMockContext());
+      expect(new URL(String(vi.mocked(fetch).mock.calls[0]?.[0])).searchParams.has('preset')).toBe(
+        false,
+      );
+      if (contentType === 'countries') {
+        expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({
+          filter: { field: 'iso3', value: 'SYR' },
+          profile: 'full',
+          limit: 1,
+        });
+      }
+    },
+  );
+
+  it.each(['detail', 'archive'])('preserves disaster %s HTTP 404 misses', async (mode) => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeErrorResponse(404, ''));
+    const service = makeService();
+    expect(
+      await (mode === 'detail'
+        ? service.getDisaster(999999999, createMockContext())
+        : service.getDisasterArchive(999999999, 'keyContent', createMockContext())),
+    ).toBeNull();
+  });
+
+  it('requests and normalizes training delivery metadata with distinct filters', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      makeOkResponse({
+        data: [
+          {
+            id: 1,
+            fields: {
+              title: 'Course',
+              cost: 'free',
+              language: [{ code: 'en' }],
+              training_language: [{ code: 'fr' }],
+            },
+          },
+          { id: 2, fields: { title: 'Sparse' } },
+        ],
+        totalCount: 2,
+      }),
+    );
+    const result = await makeService().searchTraining(
+      { cost: 'free', trainingLanguage: 'fr', language: 'en' },
+      createMockContext(),
+    );
+    const query = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+    expect(query.fields.include).toEqual(
+      expect.arrayContaining(['cost', 'training_language.code']),
+    );
+    expect(query.filter.conditions).toEqual(
+      expect.arrayContaining([
+        { field: 'cost', value: 'free' },
+        { field: 'training_language.code', value: 'fr' },
+        { field: 'language.code', value: 'en' },
+      ]),
+    );
+    expect(result.items).toEqual([
+      { id: 1, title: 'Course', cost: 'free', languages: ['en'], trainingLanguages: ['fr'] },
+      { id: 2, title: 'Sparse' },
+    ]);
+  });
+
+  it.each([0, 2000])(
+    'keeps training pagination caller-controlled at offset %s with new filters',
+    async (offset) => {
+      vi.mocked(fetch).mockResolvedValueOnce(makeOkResponse({ data: [], totalCount: 1000 }));
+      const result = await makeService().searchTraining(
+        { cost: 'fee-based', trainingLanguage: 'fr', limit: 1000, offset },
+        createMockContext(),
+      );
+      const query = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+      expect(query.limit).toBe(1000);
+      expect(query.offset).toBe(offset);
+      expect(query.filter).toEqual({
+        operator: 'AND',
+        conditions: [
+          { field: 'cost', value: 'fee-based' },
+          { field: 'training_language.code', value: 'fr' },
+        ],
+      });
+      expect(result).toEqual({ items: [], totalCount: 1000 });
+    },
+  );
+});
+
 describe('ReliefWebService.getReport — GET array envelope', () => {
   beforeEach(() => {
     vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');

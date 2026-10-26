@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-10-09 07:39:15
+Generated on: 2026-10-26 07:19:12
 
 ```text
 reliefweb-mcp-server/
@@ -38,6 +38,8 @@ reliefweb-mcp-server/
 │   ├── add-resource/
 │   │   └── SKILL.md
 │   ├── add-service/
+│   │   └── SKILL.md
+│   ├── add-skill/
 │   │   └── SKILL.md
 │   ├── add-test/
 │   │   └── SKILL.md
@@ -136,6 +138,9 @@ reliefweb-mcp-server/
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
+├── skills/
+│   └── reliefweb-guide/
+│       └── SKILL.md
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -163,7 +168,9 @@ reliefweb-mcp-server/
 │   │       │   ├── search-reports.tool.ts
 │   │       │   └── search-training.tool.ts
 │   │       ├── document-sections.ts
+│   │       ├── limits.ts
 │   │       ├── pagination.ts
+│   │       ├── plain-text-notice.ts
 │   │       └── profile-archive.ts
 │   ├── services/
 │   │   └── reliefweb/
@@ -174,6 +181,8 @@ reliefweb-mcp-server/
 │   │       └── vocabularies.ts
 │   └── index.ts
 ├── tests/
+│   ├── config/
+│   │   └── limit-startup.test.ts
 │   ├── helpers/
 │   │   └── contract-error.ts
 │   ├── prompts/
@@ -182,6 +191,8 @@ reliefweb-mcp-server/
 │   │   ├── country.resource.test.ts
 │   │   ├── disaster.resource.test.ts
 │   │   └── report.resource.test.ts
+│   ├── scripts/
+│   │   └── clean-mcpb.test.ts
 │   ├── services/
 │   │   ├── date-utils.test.ts
 │   │   ├── reliefweb-service.test.ts
@@ -193,15 +204,19 @@ reliefweb-mcp-server/
 │       ├── get-job.tool.test.ts
 │       ├── get-report.tool.test.ts
 │       ├── get-training.tool.test.ts
+│       ├── limits.test.ts
 │       ├── list-countries.tool.test.ts
 │       ├── list-sources.tool.test.ts
+│       ├── markdown-parity.test.ts
 │       ├── pagination.test.ts
+│       ├── query-recovery.tool.test.ts
 │       ├── search-disasters.tool.test.ts
 │       ├── search-jobs.tool.test.ts
 │       ├── search-reports-edge.tool.test.ts
 │       ├── search-reports.tool.test.ts
 │       ├── search-training.tool.test.ts
-│       └── security.tool.test.ts
+│       ├── security.tool.test.ts
+│       └── upstream-error-data.tool.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitattributes
@@ -218,7 +233,9 @@ reliefweb-mcp-server/
 ├── Dockerfile
 ├── LICENSE
 ├── manifest.json
+├── mcp.json
 ├── package.json
+├── plugin.json
 ├── README.md
 ├── server.json
 ├── tsconfig.build.json

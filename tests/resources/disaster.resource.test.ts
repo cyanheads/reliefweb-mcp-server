@@ -4,8 +4,8 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInMemoryStorage, createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // validationError() uses JsonRpcErrorCode.ValidationError (-32007), not InvalidParams (-32602)
 const VALIDATION_CODE = JsonRpcErrorCode.ValidationError;
@@ -17,6 +17,50 @@ const mockGetDisaster = vi.fn();
 vi.mock('@/services/reliefweb/reliefweb-service.js', () => ({
   getReliefWebService: () => ({ getDisaster: mockGetDisaster }),
 }));
+
+describe('archived disaster resource through the real service', () => {
+  afterEach(() => {
+    mockGetDisaster.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  it('retrieves an archived alert via analysis while a nonexistent ID remains NotFound', async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetDisaster.mockImplementation(service.getDisaster.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (request) => {
+      const url = new URL(String(request));
+      return url.pathname.endsWith('/disasters/52675') &&
+        url.searchParams.get('preset') === 'analysis'
+        ? Response.json({
+            data: [
+              {
+                id: 52675,
+                fields: {
+                  name: 'Archived alert',
+                  status: 'alert-archive',
+                  description: 'Archived description',
+                },
+              },
+            ],
+          })
+        : new Response('{}', { status: 404 });
+    });
+    const ctx = createMockContext({ uri: new URL('reliefweb://disasters/52675') });
+    expect(await disasterResource.handler({ id: '52675' }, ctx)).toEqual({
+      id: 52675,
+      name: 'Archived alert',
+      status: 'alert-archive',
+      description: 'Archived description',
+    });
+    await expect(disasterResource.handler({ id: '9999999' }, ctx)).rejects.toMatchObject({
+      code: JsonRpcErrorCode.NotFound,
+    });
+  });
+});
 
 describe('disasterResource', () => {
   beforeEach(() => {

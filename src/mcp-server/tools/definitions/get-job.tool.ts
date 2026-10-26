@@ -7,6 +7,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 import {
   documentOrOutline,
   OUTLINE_KIND,
@@ -43,10 +44,10 @@ const JobFields = z.object({
   url: z.string().describe('ReliefWeb node URL for this job listing.'),
   body: z
     .string()
-    .describe('Full vacancy description (HTML) — duties, requirements, and conditions.'),
+    .describe('Full vacancy description (Markdown) — duties, requirements, and conditions.'),
   howToApply: z
     .string()
-    .describe('Application instructions (HTML) as published by the hiring organization.'),
+    .describe('Application instructions (Markdown) as published by the hiring organization.'),
 });
 
 const JobOutput = z.object({
@@ -104,25 +105,30 @@ export const reliefwebGetJob = tool('reliefweb_get_job', {
  * arms.
  */
 function renderJob(result: z.infer<typeof JobOutput>) {
-  const lines: string[] = [`# ${result.title ?? `Job ${result.id}`}`];
+  const lines: string[] = [`**${escapeMarkdownInline(result.title ?? `Job ${result.id}`)}**`];
   lines.push(`**ID:** ${result.id}`);
   lines.push(`**Mode:** ${result.kind}`);
-  if (result.status) lines.push(`**Status:** ${result.status}`);
-  if (result.sources?.length) lines.push(`**Organization:** ${result.sources.join(', ')}`);
-  if (result.countries?.length) lines.push(`**Countries:** ${result.countries.join(', ')}`);
+  if (result.status) lines.push(`**Status:** ${escapeMarkdownInline(result.status)}`);
+  if (result.sources?.length)
+    lines.push(`**Organization:** ${escapeMarkdownInline(result.sources.join(', '))}`);
+  if (result.countries?.length)
+    lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
   if (result.careerCategories?.length) {
-    lines.push(`**Career category:** ${result.careerCategories.join(', ')}`);
+    lines.push(`**Career category:** ${escapeMarkdownInline(result.careerCategories.join(', '))}`);
   }
   if (result.experienceLevels?.length) {
-    lines.push(`**Experience:** ${result.experienceLevels.join(', ')}`);
+    lines.push(`**Experience:** ${escapeMarkdownInline(result.experienceLevels.join(', '))}`);
   }
-  if (result.themes?.length) lines.push(`**Themes:** ${result.themes.join(', ')}`);
-  if (result.types?.length) lines.push(`**Type:** ${result.types.join(', ')}`);
-  if (result.dateCreated) lines.push(`**Indexed:** ${result.dateCreated}`);
-  if (result.dateClosing) lines.push(`**Closing:** ${result.dateClosing}`);
-  if (result.dateChanged) lines.push(`**Last modified:** ${result.dateChanged}`);
-  if (result.urlAlias) lines.push(`**URL:** ${result.urlAlias}`);
-  if (result.url) lines.push(`**Node URL:** ${result.url}`);
+  if (result.themes?.length)
+    lines.push(`**Themes:** ${escapeMarkdownInline(result.themes.join(', '))}`);
+  if (result.types?.length)
+    lines.push(`**Type:** ${escapeMarkdownInline(result.types.join(', '))}`);
+  if (result.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(result.dateCreated)}`);
+  if (result.dateClosing) lines.push(`**Closing:** ${escapeMarkdownInline(result.dateClosing)}`);
+  if (result.dateChanged)
+    lines.push(`**Last modified:** ${escapeMarkdownInline(result.dateChanged)}`);
+  if (result.urlAlias) lines.push(`**URL:** ${markdownLink(result.urlAlias, result.urlAlias)}`);
+  if (result.url) lines.push(`**Node URL:** ${markdownLink(result.url, result.url)}`);
   if (result.body) lines.push(`\n## Description\n\n${result.body}`);
   if (result.howToApply) lines.push(`\n## How to apply\n\n${result.howToApply}`);
   return [{ type: 'text' as const, text: lines.join('\n') }];

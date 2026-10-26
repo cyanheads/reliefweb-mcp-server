@@ -5,7 +5,10 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import {
   isRejectedQueryError,
@@ -42,7 +45,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .string()
       .optional()
       .describe(
-        'Humanitarian career track (e.g., Programme and Project Management, Information and Communications Technology, Logistics and Telecommunications). Filters on career_categories.name.',
+        'ReliefWeb career-category name (e.g., Program/Project Management, Information and Communications Technology, Logistics/Procurement). Filters on career_categories.name.',
       ),
     theme: z
       .string()
@@ -68,14 +71,10 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .describe(
         'Search expired postings alongside the open ones. Uses preset=analysis. Off by default — the open set is a small fraction of the archive, so turn this on for labour-market history rather than for a hiring snapshot.',
       ),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(1000)
+    limit: limitSchema(SEARCH_MAX_LIMIT)
       .default(10)
       .describe(
-        'Number of results to return (1–1000, default 10). Each call counts against the 1,000-calls/day quota.',
+        'Number of results to return (1–1000, default 10). Larger integers are clamped to 1000 with a notice when clamping is enabled; otherwise they are rejected. Each call counts against the 1,000-calls/day quota.',
       ),
     offset: z
       .number()
@@ -136,22 +135,23 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
         'The resolved filter set the query actually ran with, after normalization and defaults. Echoes back so the agent can confirm how its inputs were interpreted.',
       ),
   }),
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
   enrichment: {
     totalCount: z.number().describe('Total jobs matching the query before pagination.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
+        'Discloses requested and applied limits when clamped. For empty pages, names the match count and last reachable offset when records matched; otherwise echoes filters and suggests how to broaden.',
       ),
   },
   errors: [
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
-      when: 'ReliefWeb rejected the query — typically an unrecognized sort field.',
+      when: 'ReliefWeb rejected the query — possible causes include malformed text or an unrecognized sort field.',
       recovery:
-        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort fields must be real ReliefWeb field names such as date.created or date.closing.',
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort fields must be real ReliefWeb field names such as date.created or date.closing. Malformed text is another possible cause: use plain keywords, balanced parentheses, and complete boolean expressions in text.',
     },
     {
       reason: 'upstream_error',
@@ -162,7 +162,14 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
     },
   ],
 
-  async handler(input, ctx) {
+  async handler(requestedInput, ctx) {
+    const { limit, notice } = resolveLimit(
+      requestedInput.limit,
+      SEARCH_MAX_LIMIT,
+      'reliefweb_search_jobs',
+      ctx,
+    );
+    const input = { ...requestedInput, limit };
     ctx.log.info('reliefweb_search_jobs', {
       text: input.text,
       country: input.country,
@@ -218,7 +225,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
     ctx.enrich.total(result.totalCount);
 
     if (result.items.length === 0 && result.totalCount > 0) {
-      ctx.enrich.notice(
+      notice(
         pagedPastEndNotice({
           subject: 'jobs',
           offset: input.offset,
@@ -234,7 +241,7 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       if (input.career_category) filters.push(`career_category="${input.career_category}"`);
       if (input.theme) filters.push(`theme="${input.theme}"`);
       if (input.experience) filters.push(`experience="${input.experience}"`);
-      ctx.enrich.notice(
+      notice(
         `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try broader keywords, remove the country filter, check the career category spelling, ' +
           'or set include_archived=true to search expired postings as well.',
@@ -247,19 +254,25 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
   format: (result) => {
     const lines: string[] = [renderAppliedFilters(result.appliedFilters)];
     for (const item of result.items) {
-      lines.push(`\n## ${item.title}`);
+      lines.push(`\n**${escapeMarkdownInline(item.title)}**`);
       lines.push(`**ID:** ${item.id}`);
-      if (item.sources?.length) lines.push(`**Organization:** ${item.sources.join(', ')}`);
-      if (item.countries?.length) lines.push(`**Countries:** ${item.countries.join(', ')}`);
+      if (item.sources?.length)
+        lines.push(`**Organization:** ${escapeMarkdownInline(item.sources.join(', '))}`);
+      if (item.countries?.length)
+        lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
       if (item.careerCategories?.length)
-        lines.push(`**Career category:** ${item.careerCategories.join(', ')}`);
+        lines.push(
+          `**Career category:** ${escapeMarkdownInline(item.careerCategories.join(', '))}`,
+        );
       if (item.experienceLevels?.length)
-        lines.push(`**Experience:** ${item.experienceLevels.join(', ')}`);
-      if (item.themes?.length) lines.push(`**Themes:** ${item.themes.join(', ')}`);
-      if (item.types?.length) lines.push(`**Type:** ${item.types.join(', ')}`);
-      if (item.dateCreated) lines.push(`**Indexed:** ${item.dateCreated}`);
-      if (item.dateClosing) lines.push(`**Closing:** ${item.dateClosing}`);
-      if (item.urlAlias) lines.push(`**URL:** ${item.urlAlias}`);
+        lines.push(`**Experience:** ${escapeMarkdownInline(item.experienceLevels.join(', '))}`);
+      if (item.themes?.length)
+        lines.push(`**Themes:** ${escapeMarkdownInline(item.themes.join(', '))}`);
+      if (item.types?.length)
+        lines.push(`**Type:** ${escapeMarkdownInline(item.types.join(', '))}`);
+      if (item.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(item.dateCreated)}`);
+      if (item.dateClosing) lines.push(`**Closing:** ${escapeMarkdownInline(item.dateClosing)}`);
+      if (item.urlAlias) lines.push(`**URL:** ${markdownLink(item.urlAlias, item.urlAlias)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },
@@ -283,12 +296,18 @@ function renderAppliedFilters(f: {
   offset: number;
 }): string {
   const parts: string[] = [];
-  if (f.text != null) parts.push(`text="${f.text}"`);
-  if (f.country != null) parts.push(`country=${f.country}`);
-  if (f.source != null) parts.push(`source="${f.source}"`);
-  if (f.careerCategory != null) parts.push(`careerCategory="${f.careerCategory}"`);
-  if (f.theme != null) parts.push(`theme="${f.theme}"`);
-  if (f.experience != null) parts.push(`experience="${f.experience}"`);
-  parts.push(`sort=${f.sort}`, `preset=${f.preset}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  if (f.text != null) parts.push(`text="${escapeMarkdownInline(f.text)}"`);
+  if (f.country != null) parts.push(`country=${escapeMarkdownInline(f.country)}`);
+  if (f.source != null) parts.push(`source="${escapeMarkdownInline(f.source)}"`);
+  if (f.careerCategory != null)
+    parts.push(`careerCategory="${escapeMarkdownInline(f.careerCategory)}"`);
+  if (f.theme != null) parts.push(`theme="${escapeMarkdownInline(f.theme)}"`);
+  if (f.experience != null) parts.push(`experience="${escapeMarkdownInline(f.experience)}"`);
+  parts.push(
+    `sort=${escapeMarkdownInline(f.sort)}`,
+    `preset=${f.preset}`,
+    `limit=${f.limit}`,
+    `offset=${f.offset}`,
+  );
   return `**Applied filters:** ${parts.join(', ')}`;
 }

@@ -28,6 +28,13 @@
           "isRequired": true
         },
         {
+          "name": "RELIEFWEB_CLAMP_LIMITS",
+          "description": "Clamp over-cap page limits with a notice; false restores strict schema maxima.",
+          "format": "boolean",
+          "isRequired": false,
+          "default": "true"
+        },
+        {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
           "format": "string",
@@ -57,6 +64,13 @@
           "description": "Pre-approved appname for the ReliefWeb API v2. Required since November 2025.",
           "format": "string",
           "isRequired": true
+        },
+        {
+          "name": "RELIEFWEB_CLAMP_LIMITS",
+          "description": "Clamp over-cap page limits with a notice; false restores strict schema maxima.",
+          "format": "boolean",
+          "isRequired": false,
+          "default": "true"
         },
         {
           "name": "MCP_HTTP_HOST",

@@ -5,7 +5,10 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import {
   isRejectedQueryError,
@@ -39,14 +42,10 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       .describe(
         'Organization type. One of: Non-governmental Organization, International Organization, Academic and Research Institution, Other, Government, Media, Red Cross/Red Crescent Movement. Filters on type.name.',
       ),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(1000)
+    limit: limitSchema(SEARCH_MAX_LIMIT)
       .default(10)
       .describe(
-        'Number of results to return (1–1000, default 10). Each call counts against the 1,000-calls/day quota.',
+        'Number of results to return (1–1000, default 10). Larger integers are clamped to 1000 with a notice when clamping is enabled; otherwise they are rejected. Each call counts against the 1,000-calls/day quota.',
       ),
     offset: z
       .number()
@@ -78,13 +77,14 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       )
       .describe('Source organizations contributing content to ReliefWeb.'),
   }),
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
   enrichment: {
     totalCount: z.number().describe('Total sources matching the query before pagination.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
+        'Discloses requested and applied limits when clamped. For empty pages, names the match count and last reachable offset when records matched; otherwise echoes filters and suggests how to broaden.',
       ),
   },
   errors: [
@@ -93,7 +93,7 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
       code: JsonRpcErrorCode.InvalidParams,
       when: 'ReliefWeb rejected the request as malformed rather than failing to serve it.',
       recovery:
-        'Correct the value named in the error message and call again; an unchanged retry is rejected identically.',
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Malformed text is another possible cause: use plain keywords, balanced parentheses, and complete boolean expressions in text.',
     },
     {
       reason: 'upstream_error',
@@ -104,7 +104,14 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
     },
   ],
 
-  async handler(input, ctx) {
+  async handler(requestedInput, ctx) {
+    const { limit, notice } = resolveLimit(
+      requestedInput.limit,
+      SEARCH_MAX_LIMIT,
+      'reliefweb_list_sources',
+      ctx,
+    );
+    const input = { ...requestedInput, limit };
     ctx.log.info('reliefweb_list_sources', {
       text: input.text,
       type: input.type,
@@ -138,7 +145,7 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
     ctx.enrich.total(result.totalCount);
 
     if (result.items.length === 0 && result.totalCount > 0) {
-      ctx.enrich.notice(
+      notice(
         pagedPastEndNotice({
           subject: 'sources',
           offset: input.offset,
@@ -157,7 +164,7 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
         filters.push(`type="${input.type}"`);
         suggestions.push('try a different organization type');
       }
-      ctx.enrich.notice(
+      notice(
         `No sources matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           (suggestions.length > 0
             ? `Try to ${suggestions.join(', or ')}.`
@@ -171,11 +178,15 @@ export const reliefwebListSources = tool('reliefweb_list_sources', {
   format: (result) => {
     const lines: string[] = [];
     for (const item of result.items) {
-      const namePart = item.shortname ? `**${item.shortname}** — ${item.name}` : `**${item.name}**`;
-      const typePart = item.types?.length ? ` (${item.types.join(', ')})` : '';
+      const namePart = item.shortname
+        ? `**${escapeMarkdownInline(item.shortname)}** — ${escapeMarkdownInline(item.name)}`
+        : `**${escapeMarkdownInline(item.name)}**`;
+      const typePart = item.types?.length
+        ? ` (${escapeMarkdownInline(item.types.join(', '))})`
+        : '';
       lines.push(`- ${namePart} [${item.id}]${typePart}`);
-      if (item.homepage) lines.push(`  Website: ${item.homepage}`);
-      if (item.url) lines.push(`  ReliefWeb: ${item.url}`);
+      if (item.homepage) lines.push(`  Website: ${markdownLink(item.homepage, item.homepage)}`);
+      if (item.url) lines.push(`  ReliefWeb: ${markdownLink(item.url, item.url)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

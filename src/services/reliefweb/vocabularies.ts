@@ -32,6 +32,9 @@ export const REPORT_FORMATS = [
  */
 export const DISASTER_STATUSES = ['alert', 'ongoing', 'past', 'alert-archive'] as const;
 
+/** Complete training cost vocabulary; listings without cost metadata remain unclassified. */
+export const TRAINING_COSTS = ['free', 'fee-based'] as const;
+
 /** Outcome of resolving caller-supplied tokens against a closed vocabulary. */
 export interface VocabularyResolution {
   /** Tokens that matched no vocabulary entry, in the caller's own spelling. */

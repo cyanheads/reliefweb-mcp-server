@@ -5,10 +5,14 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import {
   DATE_BOUND_FORMAT_MESSAGE,
   DATE_BOUND_PATTERN,
+  InvalidDateBoundError,
   resolveDateBound,
 } from '@/services/reliefweb/date-utils.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
@@ -100,14 +104,10 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       .describe(
         'Include alert-archive disasters in results, alongside alert, ongoing, and past. Uses preset=analysis. Off by default.',
       ),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(1000)
+    limit: limitSchema(SEARCH_MAX_LIMIT)
       .default(10)
       .describe(
-        'Number of results to return (1–1000, default 10). Each call counts against the 1,000-calls/day quota.',
+        'Number of results to return (1–1000, default 10). Larger integers are clamped to 1000 with a notice when clamping is enabled; otherwise they are rejected. Each call counts against the 1,000-calls/day quota.',
       ),
     offset: z
       .number()
@@ -169,16 +169,24 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
         'The resolved filter set the query actually ran with, after normalization and defaults. Echoes back so the agent can confirm how its inputs were interpreted.',
       ),
   }),
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
   enrichment: {
     totalCount: z.number().describe('Total disasters matching the query before pagination.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Present only when the page is empty. Names the match count and the last reachable offset when the query matched records; otherwise echoes the filters applied and suggests how to broaden.',
+        'Discloses requested and applied limits when clamped. For empty pages, names the match count and last reachable offset when records matched; otherwise echoes filters and suggests how to broaden.',
       ),
   },
   errors: [
+    {
+      reason: 'invalid_date',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A date bound contains impossible calendar or time components.',
+      recovery:
+        'Correct the named field using a valid calendar date or ISO 8601 datetime, then call again.',
+    },
     {
       reason: 'unknown_status',
       code: JsonRpcErrorCode.InvalidParams,
@@ -189,9 +197,9 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
-      when: 'ReliefWeb rejected the query — an unrecognized sort field or a malformed date.',
+      when: 'ReliefWeb rejected the query — possible causes include malformed text, an unrecognized sort field, or a malformed date.',
       recovery:
-        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort fields must be real ReliefWeb field names, and dates take a calendar date or a full ISO 8601 datetime.',
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Sort fields must be real ReliefWeb field names, and dates take a calendar date or a full ISO 8601 datetime. Malformed text is another possible cause: use plain keywords, balanced parentheses, and complete boolean expressions in text.',
     },
     {
       reason: 'upstream_error',
@@ -202,7 +210,14 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     },
   ],
 
-  async handler(input, ctx) {
+  async handler(requestedInput, ctx) {
+    const { limit, notice } = resolveLimit(
+      requestedInput.limit,
+      SEARCH_MAX_LIMIT,
+      'reliefweb_search_disasters',
+      ctx,
+    );
+    const input = { ...requestedInput, limit };
     ctx.log.info('reliefweb_search_disasters', {
       text: input.text,
       country: input.country,
@@ -211,8 +226,21 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     });
 
     const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
-    const dateFrom = resolveDateBound(input.date_from, 'from');
-    const dateTo = resolveDateBound(input.date_to, 'to');
+    const resolveBound = (field: 'date_from' | 'date_to', bound: 'from' | 'to') => {
+      try {
+        return resolveDateBound(input[field], bound);
+      } catch (error) {
+        if (error instanceof InvalidDateBoundError) {
+          throw ctx.fail(
+            'invalid_date',
+            `Invalid ${field} value "${error.value}". ${DATE_BOUND_FORMAT_MESSAGE}`,
+          );
+        }
+        throw error;
+      }
+    };
+    const dateFrom = resolveBound('date_from', 'from');
+    const dateTo = resolveBound('date_to', 'to');
 
     const status = resolveVocabulary(input.status, DISASTER_STATUSES, { multiValue: true });
     if (status.unmatched.length > 0) {
@@ -270,7 +298,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     ctx.enrich.total(result.totalCount);
 
     if (result.items.length === 0 && result.totalCount > 0) {
-      ctx.enrich.notice(
+      notice(
         pagedPastEndNotice({
           subject: 'disasters',
           offset: input.offset,
@@ -287,7 +315,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       if (input.glide) filters.push(`glide=${input.glide}`);
       if (dateFrom) filters.push(`date_from=${dateFrom}`);
       if (dateTo) filters.push(`date_to=${dateTo}`);
-      ctx.enrich.notice(
+      notice(
         `No disasters matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
           'Try removing filters, using different disaster type names, or setting include_archived=true for historical data.',
       );
@@ -299,17 +327,20 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
   format: (result) => {
     const lines: string[] = [renderAppliedFilters(result.appliedFilters)];
     for (const item of result.items) {
-      lines.push(`\n## ${item.name}`);
+      lines.push(`\n**${escapeMarkdownInline(item.name)}**`);
       lines.push(`**ID:** ${item.id}`);
-      if (item.status) lines.push(`**Status:** ${item.status}`);
-      if (item.glide) lines.push(`**GLIDE:** ${item.glide}`);
-      if (item.primaryType) lines.push(`**Type:** ${item.primaryType}`);
-      if (item.types?.length) lines.push(`**Types:** ${item.types.join(', ')}`);
-      if (item.dateEvent) lines.push(`**Event date:** ${item.dateEvent}`);
-      if (item.dateCreated) lines.push(`**Indexed:** ${item.dateCreated}`);
-      if (item.primaryCountry) lines.push(`**Primary country:** ${item.primaryCountry}`);
-      if (item.countries?.length) lines.push(`**Countries:** ${item.countries.join(', ')}`);
-      if (item.urlAlias) lines.push(`**URL:** ${item.urlAlias}`);
+      if (item.status) lines.push(`**Status:** ${escapeMarkdownInline(item.status)}`);
+      if (item.glide) lines.push(`**GLIDE:** ${escapeMarkdownInline(item.glide)}`);
+      if (item.primaryType) lines.push(`**Type:** ${escapeMarkdownInline(item.primaryType)}`);
+      if (item.types?.length)
+        lines.push(`**Types:** ${escapeMarkdownInline(item.types.join(', '))}`);
+      if (item.dateEvent) lines.push(`**Event date:** ${escapeMarkdownInline(item.dateEvent)}`);
+      if (item.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(item.dateCreated)}`);
+      if (item.primaryCountry)
+        lines.push(`**Primary country:** ${escapeMarkdownInline(item.primaryCountry)}`);
+      if (item.countries?.length)
+        lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
+      if (item.urlAlias) lines.push(`**URL:** ${markdownLink(item.urlAlias, item.urlAlias)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },
@@ -334,13 +365,18 @@ function renderAppliedFilters(f: {
   offset: number;
 }): string {
   const parts: string[] = [];
-  if (f.text != null) parts.push(`text="${f.text}"`);
-  if (f.country != null) parts.push(`country=${f.country}`);
-  if (f.disasterType != null) parts.push(`disasterType="${f.disasterType}"`);
+  if (f.text != null) parts.push(`text="${escapeMarkdownInline(f.text)}"`);
+  if (f.country != null) parts.push(`country=${escapeMarkdownInline(f.country)}`);
+  if (f.disasterType != null) parts.push(`disasterType="${escapeMarkdownInline(f.disasterType)}"`);
   if (f.status != null) parts.push(`status=${f.status}`);
-  if (f.glide != null) parts.push(`glide=${f.glide}`);
+  if (f.glide != null) parts.push(`glide=${escapeMarkdownInline(f.glide)}`);
   if (f.dateFrom != null) parts.push(`dateFrom=${f.dateFrom}`);
   if (f.dateTo != null) parts.push(`dateTo=${f.dateTo}`);
-  parts.push(`sort=${f.sort}`, `preset=${f.preset}`, `limit=${f.limit}`, `offset=${f.offset}`);
+  parts.push(
+    `sort=${escapeMarkdownInline(f.sort)}`,
+    `preset=${f.preset}`,
+    `limit=${f.limit}`,
+    `offset=${f.offset}`,
+  );
   return `**Applied filters:** ${parts.join(', ')}`;
 }

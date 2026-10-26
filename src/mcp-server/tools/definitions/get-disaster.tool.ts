@@ -8,6 +8,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
 import {
   documentOrOutline,
   OUTLINE_NOTICE,
@@ -15,7 +16,10 @@ import {
   renderOutline,
   sectionsInput,
 } from '@/mcp-server/tools/document-sections.js';
+import { resolveLimit } from '@/mcp-server/tools/limits.js';
+import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import {
+  ARCHIVE_MAX_LIMIT,
   ARCHIVE_PAGE,
   archiveInput,
   archivePage,
@@ -119,6 +123,13 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
     archive: archiveInput('disaster'),
   }),
   output: DisasterOutput,
+  enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
+  enrichment: {
+    notice: z
+      .string()
+      .optional()
+      .describe('Requested and applied archive limits when the page size was clamped.'),
+  },
   errors: [
     {
       reason: 'not_found',
@@ -147,7 +158,13 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
     });
 
     if (input.archive) {
-      const { list, offset, limit } = input.archive;
+      const { list, offset } = input.archive;
+      const { limit } = resolveLimit(
+        input.archive.limit,
+        ARCHIVE_MAX_LIMIT,
+        'reliefweb_get_disaster',
+        ctx,
+      );
       const found = await getReliefWebService().getDisasterArchive(input.id, list, ctx);
       if (!found) {
         throw ctx.fail(
@@ -186,18 +203,22 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
  * arms.
  */
 function renderDisaster(result: z.infer<typeof DisasterOutput>) {
-  const lines: string[] = [`# ${result.name ?? `Disaster ${result.id}`}`];
+  const lines: string[] = [`**${escapeMarkdownInline(result.name ?? `Disaster ${result.id}`)}**`];
   lines.push(`**ID:** ${result.id}`);
   lines.push(`**Mode:** ${result.kind}`);
-  if (result.status) lines.push(`**Status:** ${result.status}`);
-  if (result.glide) lines.push(`**GLIDE:** ${result.glide}`);
-  if (result.primaryType) lines.push(`**Primary type:** ${result.primaryType}`);
-  if (result.types?.length) lines.push(`**Types:** ${result.types.join(', ')}`);
-  if (result.dateEvent) lines.push(`**Event date:** ${result.dateEvent}`);
-  if (result.dateCreated) lines.push(`**Indexed:** ${result.dateCreated}`);
-  if (result.primaryCountry) lines.push(`**Primary country:** ${result.primaryCountry}`);
-  if (result.countries?.length) lines.push(`**Countries:** ${result.countries.join(', ')}`);
-  if (result.urlAlias) lines.push(`**URL:** ${result.urlAlias}`);
+  if (result.status) lines.push(`**Status:** ${escapeMarkdownInline(result.status)}`);
+  if (result.glide) lines.push(`**GLIDE:** ${escapeMarkdownInline(result.glide)}`);
+  if (result.primaryType)
+    lines.push(`**Primary type:** ${escapeMarkdownInline(result.primaryType)}`);
+  if (result.types?.length)
+    lines.push(`**Types:** ${escapeMarkdownInline(result.types.join(', '))}`);
+  if (result.dateEvent) lines.push(`**Event date:** ${escapeMarkdownInline(result.dateEvent)}`);
+  if (result.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(result.dateCreated)}`);
+  if (result.primaryCountry)
+    lines.push(`**Primary country:** ${escapeMarkdownInline(result.primaryCountry)}`);
+  if (result.countries?.length)
+    lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.urlAlias) lines.push(`**URL:** ${markdownLink(result.urlAlias, result.urlAlias)}`);
   if (result.description) lines.push(`\n## Description\n\n${result.description}`);
   if (result.profileOverview) lines.push(`\n## Overview\n\n${result.profileOverview}`);
   lines.push(...curatedLinkLines(result));

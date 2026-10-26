@@ -1,13 +1,13 @@
 <div align="center">
   <h1>@cyanheads/reliefweb-mcp-server</h1>
   <p><b>Search ReliefWeb humanitarian reports, disasters, jobs, training, and country profiles via MCP. STDIO or Streamable HTTP.</b>
-  <div>11 Tools • 3 Resources • 1 Prompt</div>
+  <div>11 Tools • 3 Resources • 1 Prompt • 1 Skill</div>
   </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.3-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.2.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.2.3-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/reliefweb-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/reliefweb-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/reliefweb-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -29,7 +29,7 @@
 
 ## Overview
 
-Humanitarian reports, disasters, jobs, training opportunities, and country profiles from ReliefWeb, OCHA's information hub for crisis response. Search, fetch, and page through all six ReliefWeb content types from any MCP client. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+Humanitarian reports, disasters, jobs, training, and country profiles from ReliefWeb, OCHA's information hub for crisis response. Search and read across every ReliefWeb content type.
 
 ### Tools
 
@@ -43,7 +43,7 @@ Humanitarian reports, disasters, jobs, training opportunities, and country profi
 | `reliefweb_list_countries` | List all countries tracked by ReliefWeb, filterable to active humanitarian situations |
 | `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and experience level |
 | `reliefweb_get_job` | Fetch a job posting by numeric ID with the full vacancy description and application instructions |
-| `reliefweb_search_training` | Search training and learning opportunities by format, country, career category, and date — upcoming starts by default |
+| `reliefweb_search_training` | Search training by format, country, career category, cost, listing or delivery language, and date — upcoming starts by default |
 | `reliefweb_get_training` | Fetch a training listing by numeric ID with the full description, registration instructions, and cost detail |
 | `reliefweb_list_sources` | Browse contributing organizations by name and type |
 
@@ -63,6 +63,8 @@ Humanitarian reports, disasters, jobs, training opportunities, and country profi
 
 ## Capability reference
 
+Search/list page limits above 1,000 and profile-archive limits above 100 are clamped with a notice showing the requested and applied values. Defaults are unchanged: 10 for searches and sources, 100 for countries, 25 for profile archives. Set `RELIEFWEB_CLAMP_LIMITS=false` to restore strict upper-bound validation. Zero, negative, and fractional limits are always rejected.
+
 ### `reliefweb_search_reports` <sub>tool</sub>
 
 - Full-text query plus filters: country (ISO3), disaster ID, format, theme, language (ISO 639-1), and source shortname
@@ -76,7 +78,7 @@ Humanitarian reports, disasters, jobs, training opportunities, and country profi
 
 ### `reliefweb_get_report` <sub>tool</sub>
 
-- Full body HTML, all metadata, and file attachment URLs
+- Full body Markdown, all metadata, and file attachment URLs
 - Use after `reliefweb_search_reports` to retrieve content — bodies run 10–100KB
 - Over the response budget, returns a section outline instead; `sections: ["body"]` pulls the body back on its own
 - Returns structured `not_found` when the ID doesn't exist
@@ -97,6 +99,7 @@ Humanitarian reports, disasters, jobs, training opportunities, and country profi
 ### `reliefweb_get_disaster` <sub>tool</sub>
 
 - Full description, profile overview, affected countries, and GLIDE number
+- Retrieves archived disaster records as well as current ones
 - Three curated lists — `keyContent`, `appealsResponsePlans`, `usefulLinks` — each returns only its currently-active entries; archived entries page via `archive: { list: <name> }`
 - Major disasters run to tens of KB; over the response budget the record becomes a section outline, and `sections: ["description"]` or `["profileOverview"]` pulls one narrative at a time
 - `sections` and `archive` are alternative modes — a call supplying both is rejected
@@ -146,7 +149,8 @@ Humanitarian reports, disasters, jobs, training opportunities, and country profi
 
 ### `reliefweb_search_training` <sub>tool</sub>
 
-- Filtering by country, source, format (`on-site` or `online`), career category, and language
+- Filtering by country, source, format (`on-site` or `online`), career category, and cost (`free` or `fee-based`)
+- `language` filters the listing language; `training_language` filters delivery language. Summaries include cost and delivery languages when supplied by the organizer
 - Date range filtering on training start date (`date_start_from`/`date_start_to`) — a bare `2024-06-01` works alongside full ISO 8601
 - Scoped to training starting from now when neither date bound is given; supply either one for an explicit range, including a historical one
 - `include_archived=true` reaches concluded listings and drops the start-from-now default, so an otherwise unbounded search reaches the whole record
@@ -203,6 +207,11 @@ Humanitarian reports, disasters, jobs, training opportunities, and country profi
 
 - Arguments: `country_or_disaster` required (name, ISO3 code, or GLIDE number); `focus` optional — `situation`, `jobs`, or `full` (default)
 - Returns one user message instructing the agent to gather data with the ReliefWeb tools, then synthesize a briefing citing report titles and dates
+- Resolves country names to ISO3 codes before filtered calls; keeps disaster-name and GLIDE searches separate
+
+### `reliefweb-guide` <sub>skill</sub>
+
+The bundled [guide](./skills/reliefweb-guide/SKILL.md) covers country/disaster research, opportunity evaluation, and checks before claiming that historical material is absent. MCP clients can discover and read it as a skill resource.
 
 ## Features
 
@@ -212,7 +221,8 @@ ReliefWeb-specific:
 
 - Full coverage of all six ReliefWeb content types: reports, disasters, countries, jobs, training, and sources
 - Compound filter builder supporting nested AND/OR conditions for the ReliefWeb API v2
-- Vocabulary matching for `format` and `status` filters normalizes case, spacing, and punctuation instead of requiring exact ReliefWeb spelling
+- Vocabulary matching for report `format`, disaster `status`, and training `cost` normalizes case, spacing, and punctuation instead of requiring exact ReliefWeb spelling
+- Date bounds reject impossible calendar dates and times locally; valid end-of-day `24:00` resolves to the next midnight
 - `RELIEFWEB_APP_NAME` validated at startup — required by the API since November 2025
 - 1,000 calls/day API quota, surfaced in each search and list tool's upstream-error recovery text
 
@@ -225,59 +235,27 @@ Agent-friendly output:
 
 ## Getting started
 
-### Prerequisites
+Connect to the public hosted server with Claude Code:
 
-- [Bun v1.3.2](https://bun.sh/) or higher.
-- A **pre-approved ReliefWeb appname** — register at [ReliefWeb API](https://reliefweb.int/help/api) and set `RELIEFWEB_APP_NAME`. The API has required pre-approved appnames since November 2025; requests without one are rejected.
-
-### Public Hosted Instance
-
-A public instance is available at `https://reliefweb.caseyjhand.com/mcp` — no installation required. Point any MCP client at it via Streamable HTTP:
-
-```json
-{
-  "mcpServers": {
-    "reliefweb-mcp-server": {
-      "type": "streamable-http",
-      "url": "https://reliefweb.caseyjhand.com/mcp"
-    }
-  }
-}
+```sh
+claude mcp add --transport http reliefweb-mcp-server https://reliefweb.caseyjhand.com/mcp
 ```
 
-### Self-Hosted / Local
+Or run locally with your own pre-approved ReliefWeb appname:
 
-Add the following to your MCP client configuration file.
-
-```json
-{
-  "mcpServers": {
-    "reliefweb-mcp-server": {
-      "type": "stdio",
-      "command": "bunx",
-      "args": ["@cyanheads/reliefweb-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info",
-        "RELIEFWEB_APP_NAME": "your-app-name"
-      }
-    }
-  }
-}
+```sh
+claude mcp add reliefweb-mcp-server -e RELIEFWEB_APP_NAME=your-app-name -- npx -y @cyanheads/reliefweb-mcp-server
 ```
 
-Or with npx (no Bun required):
+For other MCP clients, add this to your MCP client configuration file:
 
 ```json
 {
   "mcpServers": {
     "reliefweb-mcp-server": {
-      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/reliefweb-mcp-server@latest"],
+      "args": ["-y", "@cyanheads/reliefweb-mcp-server"],
       "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info",
         "RELIEFWEB_APP_NAME": "your-app-name"
       }
     }
@@ -285,64 +263,14 @@ Or with npx (no Bun required):
 }
 ```
 
-Or with Docker:
-
-```json
-{
-  "mcpServers": {
-    "reliefweb-mcp-server": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "MCP_TRANSPORT_TYPE=stdio",
-        "-e", "RELIEFWEB_APP_NAME=your-app-name",
-        "ghcr.io/cyanheads/reliefweb-mcp-server:latest"
-      ]
-    }
-  }
-}
-```
-
-For Streamable HTTP, set the transport and start the server:
-
-```sh
-MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 RELIEFWEB_APP_NAME=your-app-name bun run start:http
-# Server listens at http://localhost:3010/mcp
-```
-
-### Installation
-
-1. **Clone the repository:**
-
-```sh
-git clone https://github.com/cyanheads/reliefweb-mcp-server.git
-```
-
-2. **Navigate into the directory:**
-
-```sh
-cd reliefweb-mcp-server
-```
-
-3. **Install dependencies:**
-
-```sh
-bun install
-```
-
-4. **Configure environment:**
-
-```sh
-cp .env.example .env
-# edit .env and set RELIEFWEB_APP_NAME
-```
+Register an appname at [ReliefWeb API](https://reliefweb.int/help/api). For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 
 | Variable | Description | Default |
 |:---|:---|:---|
 | `RELIEFWEB_APP_NAME` | **Required.** Pre-approved appname for the ReliefWeb API v2. Register at reliefweb.int/help/api. | — |
+| `RELIEFWEB_CLAMP_LIMITS` | Clamp over-cap page limits with an explicit notice. `false` restores strict schema maxima. | `true` |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http` | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port | `3010` |
 | `MCP_HTTP_ENDPOINT_PATH` | HTTP endpoint path where the MCP server is mounted | `/mcp` |
@@ -360,6 +288,14 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 ## Running the server
 
 ### Local development
+
+Requires [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+ for the built server).
+
+```sh
+git clone https://github.com/cyanheads/reliefweb-mcp-server.git
+cd reliefweb-mcp-server && bun install
+cp .env.example .env   # set RELIEFWEB_APP_NAME
+```
 
 - **Build and run the production version**:
 
@@ -382,11 +318,10 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 ### Docker
 
 ```sh
-docker build -t reliefweb-mcp-server .
-docker run --rm -e RELIEFWEB_APP_NAME=your-app-name -p 3010:3010 reliefweb-mcp-server
+docker run --rm -e RELIEFWEB_APP_NAME=your-app-name -p 3010:3010 ghcr.io/cyanheads/reliefweb-mcp-server:latest
 ```
 
-The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/reliefweb-mcp-server`. OpenTelemetry peer dependencies are installed by default — build with `--build-arg OTEL_ENABLED=false` to omit them.
+The image defaults to HTTP transport, stateless session mode, and logs to `/var/log/reliefweb-mcp-server`. For stdio, use `docker run -i --rm -e MCP_TRANSPORT_TYPE=stdio -e RELIEFWEB_APP_NAME=your-app-name ghcr.io/cyanheads/reliefweb-mcp-server:latest`. Build locally with `docker build -t reliefweb-mcp-server .`; OpenTelemetry peers are installed by default — add `--build-arg OTEL_ENABLED=false` to omit them.
 
 ## Project structure
 
@@ -397,6 +332,7 @@ The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `
 | `src/mcp-server/prompts` | Prompt definitions. Crisis briefing prompt. |
 | `src/services/reliefweb` | ReliefWeb API service layer — HTTP client, filter builder, and response normalizers for all six content types. |
 | `src/config` | Server-specific environment variable parsing and validation with Zod. |
+| `skills/` | Published agent guidance, also served as MCP skill resources. |
 | `tests/` | Unit and integration tests, mirroring the `src/` structure. |
 
 ## Development guide

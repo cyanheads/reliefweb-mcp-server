@@ -402,10 +402,11 @@ describe('reliefwebGetCountry', () => {
     });
   });
 
-  it('rejects an archive limit above the page cap at the schema', () => {
-    expect(() =>
-      reliefwebGetCountry.input.parse({ iso3: 'SYR', archive: { list: 'keyContent', limit: 500 } }),
-    ).toThrow();
+  it('retains an over-cap archive limit for disclosed clamping', () => {
+    expect(
+      reliefwebGetCountry.input.parse({ iso3: 'SYR', archive: { list: 'keyContent', limit: 500 } })
+        .archive?.limit,
+    ).toBe(500);
   });
 
   // ─── format() parity ───────────────────────────────────────────────────────

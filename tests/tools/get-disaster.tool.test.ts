@@ -4,8 +4,12 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createInMemoryStorage,
+  createMockContext,
+  runToolContract,
+} from '@cyanheads/mcp-ts-core/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetDisaster } from '@/mcp-server/tools/definitions/get-disaster.tool.js';
 import { contractError } from '../helpers/contract-error.js';
 
@@ -48,6 +52,122 @@ function oversizedDisaster() {
 function textOf(blocks: ReturnType<NonNullable<typeof reliefwebGetDisaster.format>>): string {
   return blocks.map((b) => (b as { text?: string }).text ?? '').join('\n');
 }
+
+describe('archived disaster tool through the real service', () => {
+  beforeEach(async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetDisaster.mockImplementation(service.getDisaster.bind(service));
+    mockGetDisasterArchive.mockImplementation(service.getDisasterArchive.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (request) => {
+      const url = new URL(String(request));
+      if (
+        (!url.pathname.endsWith('/disasters/52675') &&
+          !url.pathname.endsWith('/disasters/51470')) ||
+        url.searchParams.get('preset') !== 'analysis'
+      )
+        return new Response('{}', { status: 404 });
+      return Response.json({
+        data: [
+          {
+            id: url.pathname.endsWith('/52675') ? 52675 : 51470,
+            fields: {
+              name: 'Archived alert',
+              status: url.pathname.endsWith('/52675') ? 'alert-archive' : 'ongoing',
+              description: 'Archived description',
+              profile: {
+                key_content: {
+                  active: [{ title: 'Current link', url: 'https://example.org/current' }],
+                  archive: [
+                    { title: 'Archived first', url: 'https://example.org/first' },
+                    { title: 'Archived second', url: 'https://example.org/second' },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      });
+    });
+  });
+  afterEach(() => {
+    mockGetDisaster.mockReset();
+    mockGetDisasterArchive.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('resolves archived full and section calls without including curated archives', async () => {
+    for (const sections of [undefined, ['description']]) {
+      const result = await runToolContract(reliefwebGetDisaster, {
+        id: 52675,
+        ...(sections ? { sections } : {}),
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        id: 52675,
+        kind: 'full',
+        description: 'Archived description',
+      });
+      expect(JSON.stringify(result.content)).toContain('Archived description');
+      expect(JSON.stringify(result)).not.toContain('Archived first');
+      if (sections) expect(result.structuredContent).not.toHaveProperty('keyContent');
+      else
+        expect(result.structuredContent).toMatchObject({
+          status: 'alert-archive',
+          keyContent: [{ title: 'Current link' }],
+        });
+    }
+  });
+
+  it('keeps ongoing disaster detail reachable with the same analysis request', async () => {
+    const result = await runToolContract(reliefwebGetDisaster, { id: 51470 });
+    expect(result.structuredContent).toMatchObject({
+      id: 51470,
+      status: 'ongoing',
+      description: 'Archived description',
+    });
+    expect(JSON.stringify(result.content)).toContain('ongoing');
+  });
+
+  it('pages the normalized archived list through second, last, and past-end pages', async () => {
+    for (const offset of [0, 1, 2]) {
+      const result = await runToolContract(reliefwebGetDisaster, {
+        id: 52675,
+        archive: { list: 'keyContent', offset, limit: 1 },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        kind: 'archive',
+        archive: { total: 2, offset, shown: offset < 2 ? 1 : 0 },
+      });
+      if (offset === 0)
+        expect(result.structuredContent).toMatchObject({
+          archive: { nextOffset: 1, entries: [{ title: 'Archived first' }] },
+        });
+      if (offset === 1) {
+        expect(result.structuredContent).toMatchObject({
+          archive: { entries: [{ title: 'Archived second' }] },
+        });
+        expect(JSON.stringify(result.content)).toContain('Archived second');
+      }
+      if (offset > 0) expect(result.structuredContent).not.toHaveProperty('archive.nextOffset');
+    }
+  });
+
+  it('keeps an absent archived ID on not_found in full and archive modes', async () => {
+    for (const archive of [undefined, { list: 'keyContent' }]) {
+      const error = await contractError(reliefwebGetDisaster, {
+        id: 9999999,
+        ...(archive ? { archive } : {}),
+      });
+      expect(error.data).toMatchObject({ reason: 'not_found' });
+    }
+  });
+});
 
 describe('reliefwebGetDisaster', () => {
   beforeEach(() => {

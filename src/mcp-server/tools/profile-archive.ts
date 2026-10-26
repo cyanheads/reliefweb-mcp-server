@@ -13,6 +13,8 @@
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
+import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { limitSchema } from '@/mcp-server/tools/limits.js';
 import type { ProfileArchiveEntry, ProfileArchiveList } from '@/services/reliefweb/types.js';
 import { PROFILE_ARCHIVE_LISTS } from '@/services/reliefweb/types.js';
 
@@ -90,13 +92,11 @@ export function archiveInput(subject: string) {
         .describe(
           'Zero-based index of the first archived entry to return. Send back the nextOffset from the previous page to continue.',
         ),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(ARCHIVE_MAX_LIMIT)
+      limit: limitSchema(ARCHIVE_MAX_LIMIT)
         .default(ARCHIVE_DEFAULT_LIMIT)
-        .describe(`Maximum archived entries in one page (1-${ARCHIVE_MAX_LIMIT}).`),
+        .describe(
+          `Maximum archived entries in one page (1-${ARCHIVE_MAX_LIMIT}). Larger integers are clamped with a notice when clamping is enabled; otherwise they are rejected.`,
+        ),
     })
     .optional()
     .describe(
@@ -162,7 +162,9 @@ export function renderArchive(result: { archive?: ArchivePage | undefined }): Ar
     );
   }
   for (const entry of page.entries) {
-    lines.push(`- [${entry.title}](${entry.url})${entry.date ? ` (${entry.date})` : ''}`);
+    lines.push(
+      `- ${markdownLink(entry.title, entry.url)}${entry.date ? ` (${escapeMarkdownInline(entry.date)})` : ''}`,
+    );
   }
   return [{ type: 'text', text: lines.join('\n') }];
 }
@@ -183,17 +185,19 @@ export function curatedLinkLines(result: {
   const lines: string[] = [];
   if (result.keyContent?.length) {
     lines.push('\n## Key Content');
-    for (const kc of result.keyContent) lines.push(`- [${kc.title}](${kc.url})`);
+    for (const kc of result.keyContent) lines.push(`- ${markdownLink(kc.title, kc.url)}`);
   }
   if (result.appealsResponsePlans?.length) {
     lines.push('\n## Appeals & Response Plans');
     for (const ap of result.appealsResponsePlans) {
-      lines.push(`- [${ap.title}](${ap.url})${ap.date ? ` (${ap.date})` : ''}`);
+      lines.push(
+        `- ${markdownLink(ap.title, ap.url)}${ap.date ? ` (${escapeMarkdownInline(ap.date)})` : ''}`,
+      );
     }
   }
   if (result.usefulLinks?.length) {
     lines.push('\n## Useful Links');
-    for (const ul of result.usefulLinks) lines.push(`- [${ul.title}](${ul.url})`);
+    for (const ul of result.usefulLinks) lines.push(`- ${markdownLink(ul.title, ul.url)}`);
   }
   return lines;
 }

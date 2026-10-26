@@ -4,8 +4,12 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createInMemoryStorage,
+  createMockContext,
+  runToolContract,
+} from '@cyanheads/mcp-ts-core/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetTraining } from '@/mcp-server/tools/definitions/get-training.tool.js';
 import { contractError } from '../helpers/contract-error.js';
 
@@ -45,6 +49,60 @@ function realisticTraining() {
 function textOf(blocks: ReturnType<NonNullable<typeof reliefwebGetTraining.format>>): string {
   return blocks.map((b) => (b as { text?: string }).text ?? '').join('\n');
 }
+
+describe('training detail through summary normalization', () => {
+  afterEach(() => {
+    mockGetTraining.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  it('preserves cost, both language fields, and detail section selection on both surfaces', async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetTraining.mockImplementation(service.getTraining.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      Response.json({
+        data: [
+          {
+            id: 3678550,
+            fields: {
+              title: 'Bilingual course',
+              cost: 'free',
+              language: [{ code: 'en' }],
+              training_language: [{ code: 'fr' }, { code: 'en' }],
+              body: 'Course body',
+              how_to_register: 'Register here',
+            },
+          },
+        ],
+      }),
+    );
+    for (const sections of [undefined, ['cost', 'trainingLanguages', 'languages']]) {
+      const result = await runToolContract(reliefwebGetTraining, {
+        id: 3678550,
+        ...(sections ? { sections } : {}),
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        id: 3678550,
+        cost: 'free',
+        languages: ['en'],
+        trainingLanguages: ['fr', 'en'],
+      });
+      expect(JSON.stringify(result.content)).toContain('free');
+      expect(JSON.stringify(result.content)).toContain('fr, en');
+      if (sections) expect(result.structuredContent).not.toHaveProperty('body');
+      else
+        expect(result.structuredContent).toMatchObject({
+          body: 'Course body',
+          howToRegister: 'Register here',
+        });
+    }
+  });
+});
 
 describe('reliefwebGetTraining', () => {
   beforeEach(() => {
