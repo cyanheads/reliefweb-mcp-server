@@ -15,7 +15,7 @@ import { reliefwebSearchReports } from '@/mcp-server/tools/definitions/search-re
 import { reliefwebSearchTraining } from '@/mcp-server/tools/definitions/search-training.tool.js';
 import { limitSchema, resolveLimit } from '@/mcp-server/tools/limits.js';
 
-const { service, counter } = vi.hoisted(() => ({
+const { service, counter, createdCounters } = vi.hoisted(() => ({
   service: {
     searchReports: vi.fn(),
     searchJobs: vi.fn(),
@@ -27,13 +27,18 @@ const { service, counter } = vi.hoisted(() => ({
     getDisasterArchive: vi.fn(),
   },
   counter: { add: vi.fn() },
+  // Arguments of every createCounter call; a plain array, so vi.clearAllMocks() keeps it.
+  createdCounters: [] as unknown[][],
 }));
 vi.mock('@/services/reliefweb/reliefweb-service.js', () => ({
   getReliefWebService: () => service,
 }));
 vi.mock('@cyanheads/mcp-ts-core/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@cyanheads/mcp-ts-core/utils')>()),
-  createCounter: () => counter,
+  createCounter: (...args: unknown[]) => {
+    createdCounters.push(args);
+    return counter;
+  },
 }));
 
 beforeEach(() => {
@@ -111,6 +116,16 @@ describe('shared clamping policy', () => {
     const next = createMockContext();
     resolveLimit(1, maximum, 'reliefweb_search_jobs', next);
     expect(getEnrichment(next).notice).toBeUndefined();
+  });
+
+  it('creates its clamp counter once, at module load, whatever the number of clamps', () => {
+    resolveLimit(1001, 1000, 'reliefweb_search_jobs', createMockContext());
+    resolveLimit(101, 100, 'reliefweb_get_country', createMockContext());
+
+    expect(counter.add).toHaveBeenCalledTimes(2);
+    expect(createdCounters).toEqual([
+      ['reliefweb.limit.clamps', 'Page limits reduced to the supported ceiling', '{clamps}'],
+    ]);
   });
 
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(

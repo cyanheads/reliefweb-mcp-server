@@ -10,7 +10,11 @@ import { getLimitConfig } from '@/config/server-config.js';
 export const SEARCH_MAX_LIMIT = 1000;
 
 const clampLimits = getLimitConfig().clampLimits;
-let clamps: ReturnType<typeof createCounter> | undefined;
+const clamps = createCounter(
+  'reliefweb.limit.clamps',
+  'Page limits reduced to the supported ceiling',
+  '{clamps}',
+);
 
 /** Positive integer schema; the startup switch controls only its upper bound. */
 export function limitSchema(maximum: number) {
@@ -25,11 +29,6 @@ export function resolveLimit(requested: number, maximum: number, tool: string, c
     limit < requested ? `Requested limit ${requested}; applied limit ${limit}.` : undefined;
   if (clampNotice) {
     ctx.log.info('ReliefWeb page limit clamped', { tool, requested, applied: limit });
-    clamps ??= createCounter(
-      'reliefweb.limit.clamps',
-      'Page limits reduced to the supported ceiling',
-      '{clamps}',
-    );
     clamps.add(1, { tool, maximum });
   }
   const notice = (message?: string) => {
