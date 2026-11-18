@@ -40,10 +40,10 @@ Humanitarian reports, disasters, jobs, training, and country profiles from Relie
 | `reliefweb_search_disasters` | Search disasters by type, country, status, GLIDE number, and date range |
 | `reliefweb_get_disaster` | Fetch a disaster record with profile, key content links, appeals, and response plans |
 | `reliefweb_get_country` | Fetch a country profile by ISO3 code with overview, appeals, and curated links |
-| `reliefweb_list_countries` | List all countries tracked by ReliefWeb, filterable to active humanitarian situations |
-| `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and experience level |
+| `reliefweb_list_countries` | List countries tracked by ReliefWeb, looked up by name or filtered to active humanitarian situations |
+| `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, job type, career category, theme, and experience level |
 | `reliefweb_get_job` | Fetch a job posting by numeric ID with the full vacancy description and application instructions |
-| `reliefweb_search_training` | Search training by format, country, career category, cost, listing or delivery language, and date — upcoming starts by default |
+| `reliefweb_search_training` | Search training by format, country, career category, cost, listing or delivery language, and date — upcoming starts and undated listings by default |
 | `reliefweb_get_training` | Fetch a training listing by numeric ID with the full description, registration instructions, and cost detail |
 | `reliefweb_list_sources` | Browse contributing organizations by name and type |
 
@@ -51,9 +51,9 @@ Humanitarian reports, disasters, jobs, training, and country profiles from Relie
 
 | Resource | Description |
 |:---|:---|
-| `reliefweb://reports/{id}` | Full report record by numeric ID — metadata, body text, and file URLs. The ID segment must be digits only |
-| `reliefweb://disasters/{id}` | Disaster record by numeric ID — type, status, GLIDE, description, and content links. The ID segment must be digits only |
-| `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, and active response plans |
+| `reliefweb://reports/{id}` | Full report record by numeric ID — metadata, body text, file URLs, and linked disasters. The ID segment must be digits only |
+| `reliefweb://disasters/{id}` | Disaster record by numeric ID — type, status, GLIDE, description, and active curated links with their report IDs. The ID segment must be digits only |
+| `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, and active curated links with their report IDs |
 
 ### Prompts
 
@@ -67,7 +67,10 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb_search_reports` <sub>tool</sub>
 
-- Full-text query plus filters: country (ISO3), disaster ID, format, theme, language (ISO 639-1), and source shortname
+- Full-text query plus filters: country (ISO3), disaster ID, format, theme, language (ISO 639-1, any case), and source shortname
+- `country` takes one or more ISO3 codes in any case, separated by commas or spaces; several codes match reports tagged with every listed country. A name or two-letter code is rejected with a pointer to `reliefweb_list_countries` `text`
+- `theme` resolves to a canonical ReliefWeb theme and filters whole theme tags: the theme name, an abbreviation (`WASH`, `CCCM`, `NFI`), or a word found in only one theme name (`Protection`). Comma-separated themes must all be present. A word shared by several themes (`Food`) or a phrase mixing them (`Food Security`) is rejected with the valid list
+- Each report carries its linked `disasters` (`id`, `name`, optional `glide`) and uppercase `primaryCountryIso3` / `countryIso3s`
 - Date range filtering on source publication date (`date_from`/`date_to`) — a bare `2024-01-15` works alongside full ISO 8601
 - Format is a closed set: `News and Press Release`, `Situation Report`, `Map`, `Infographic`, `Analysis`, `Other`, `Assessment`, `Manual and Guideline`, `Appeal`, `UN Document`, `Evaluation and Lessons Learned` — matched ignoring case, spacing, and punctuation; anything else is rejected with the list
 - Raw `filter` object for compound conditions the named params don't cover
@@ -87,7 +90,8 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb_search_disasters` <sub>tool</sub>
 
-- Filtering by disaster type, country, status, and GLIDE number for cross-system correlation
+- Filtering by disaster type, country (one or more ISO3 codes, as on reports), status, and GLIDE number for cross-system correlation
+- Each disaster carries uppercase `primaryCountryIso3` / `countryIso3s`
 - Date range filtering on disaster creation date (`date_from`/`date_to`) — a bare `2024-01-15` works alongside full ISO 8601
 - Status is a closed set: `alert`, `ongoing`, `past`, `alert-archive`; comma-separate for multiple, matched ignoring case, spacing, and punctuation
 - `alert-archive` is reachable only with `include_archived=true` — the default preset hides it
@@ -98,7 +102,9 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb_get_disaster` <sub>tool</sub>
 
-- Full description, profile overview, affected countries, and GLIDE number
+- Full description, profile overview, affected countries (names and uppercase ISO3 codes), and GLIDE number
+- A profile overview identical to the description is returned once, as `description`, with `profileOverviewSameAsDescription: true` in place of `profileOverview`; `sections: ["profileOverview"]` still returns the stored text
+- Curated-link entries, active and archived, carry a `reportId` when the link is a ReliefWeb node link (`https://reliefweb.int/node/<id>`, with or without `/edit`), parsed from the URL and not verified — pass it to `reliefweb_get_report`
 - Retrieves archived disaster records as well as current ones
 - Three curated lists — `keyContent`, `appealsResponsePlans`, `usefulLinks` — each returns only its currently-active entries; archived entries page via `archive: { list: <name> }`
 - Major disasters run to tens of KB; over the response budget the record becomes a section outline, and `sections: ["description"]` or `["profileOverview"]` pulls one narrative at a time
@@ -113,25 +119,31 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 - Three curated lists — `keyContent`, `appealsResponsePlans`, `usefulLinks` — each returns only its currently-active entries; archived entries (thousands deep for a long-running crisis) page via `archive: { list: <name> }`
 - `sections` and `archive` are alternative modes — a call supplying both is rejected
 - Carries the same section-outline behavior as the other detail tools, though an active-only profile is small enough that it rarely reaches the budget
-- Use `reliefweb_list_countries` to discover valid ISO3 codes
+- `iso3` is exactly three letters in any case, returned uppercase; look a code up by country name with `reliefweb_list_countries` `text`
+- Curated-link entries, active and archived, carry a `reportId` when the link is a ReliefWeb node link (`https://reliefweb.int/node/<id>`, with or without `/edit`), parsed from the URL and not verified
 - Returns structured `not_found` for an unknown ISO3 code
 
 ---
 
 ### `reliefweb_list_countries` <sub>tool</sub>
 
+- `text` looks a country up by name: it matches whole words of the country name and short name, ignoring case and accents, and every word must match (`Syria` returns `SYR`; `Congo` returns `COD` and `COG`; `Ivory Coast` matches nothing). When it misses, list without `text` and read the full listing
 - Optional `crisis_only=true` to limit to active humanitarian situations (status ongoing)
-- Returns ISO3 codes, status, and canonical URLs — use ISO3 with `reliefweb_get_country`
+- Returns uppercase ISO3 codes, status, and canonical URLs — use ISO3 with `reliefweb_get_country` and the `country` filter of the search tools
+- The `text` lookup is echoed as `effectiveQuery`; a no-match notice says no country name or short name matched
 - Pagination up to 1,000 entries per call (default 100)
 
 ---
 
 ### `reliefweb_search_jobs` <sub>tool</sub>
 
-- Filtering by country, organization shortname, career category, theme, and experience level
+- Filtering by country (one or more ISO3 codes), organization shortname, job type, career category, theme, and experience level
+- `job_type` is `Job`, `Consultancy`, `Internship`, `Tender/RFPs/EOIs`, or `Volunteer Opportunity`; a word found in only one type (`Tender`, `Volunteer`) also resolves, and comma-separated types match any of them
+- `career_category` and `theme` resolve to canonical ReliefWeb names and filter whole tags — the name, an abbreviation (`ICT`, `M&E`, `HR`; `WASH`, `CCCM`, `NFI`), or a word found in only one name (`Logistics`, `Protection`). Comma-separated values must all be present; a word shared by several names is rejected with the valid list
 - Returns current open postings by default; `include_archived=true` reaches the closed archive, far larger than the open set
 - Sortable by newest posting (`date.created:desc`, default) or soonest closing (`date.closing:asc`)
 - Pagination via `offset`/`limit`, up to 1,000 per call (default 10)
+- Each posting carries uppercase `countryIso3s` beside the country names
 - Returns IDs for `reliefweb_get_job`
 
 ---
@@ -149,12 +161,13 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb_search_training` <sub>tool</sub>
 
-- Filtering by country, source, format (`on-site` or `online`), career category, and cost (`free` or `fee-based`)
-- `language` filters the listing language; `training_language` filters delivery language. Summaries include cost and delivery languages when supplied by the organizer
+- Filtering by country (one or more ISO3 codes), source, format (`on-site` or `online`), career category (resolved and matched as on jobs), and cost (`free` or `fee-based`)
+- `language` filters the listing language; `training_language` filters delivery language; both are case-insensitive. Summaries include cost and delivery languages when supplied by the organizer
 - Date range filtering on training start date (`date_start_from`/`date_start_to`) — a bare `2024-06-01` works alongside full ISO 8601
-- Scoped to training starting from now when neither date bound is given; supply either one for an explicit range, including a historical one
-- `include_archived=true` reaches concluded listings and drops the start-from-now default, so an otherwise unbounded search reaches the whole record
-- Ordered by soonest start date by default (`date.start:asc`, distinct from report date fields); override with `sort`
+- With neither date bound, covers training starting from now plus listings with no start date (most online courses have none); `appliedFilters.undatedIncluded` is `true` then. A supplied bound, historical or not, is a plain window that leaves undated listings out
+- `include_archived=true` reaches concluded listings and drops that default scope, so an otherwise unbounded search reaches the whole record, dated or not
+- Ordered by `date.start:asc, date.created:desc` by default (distinct from report date fields): dated listings first, soonest-starting, then undated ones, newest-posted; a supplied `sort` is the only key
+- Each listing carries uppercase `countryIso3s` beside the country names
 - Returns IDs for `reliefweb_get_training`
 
 ---
@@ -181,7 +194,7 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb://reports/{id}` <sub>resource</sub>
 
-- Full report record as `application/json` — metadata, body text, and file URLs
+- Full report record as `application/json` — metadata, body text, file URLs, linked `disasters`, and uppercase country ISO3 codes
 - `id` must be digits only, exactly as search returned it
 - Always returns the whole record — no section selector; use `reliefweb_get_report` for an oversized report
 
@@ -189,7 +202,8 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb://disasters/{id}` <sub>resource</sub>
 
-- Disaster record as `application/json` — type, status, GLIDE, description, and curated content links
+- Disaster record as `application/json` — type, status, GLIDE, description, affected countries with uppercase ISO3 codes, and curated content links with the report IDs their URLs name
+- A profile overview identical to the description appears once, as `description`, with `profileOverviewSameAsDescription: true` in place of `profileOverview`
 - `id` must be digits only, exactly as search returned it
 - Always returns the whole record — no section selector; use `reliefweb_get_disaster` for an oversized disaster or to page an archive
 
@@ -197,9 +211,9 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 ### `reliefweb://countries/{iso3}` <sub>resource</sub>
 
-- Country profile as `application/json` — overview, situation summary, and active response plans
-- Equivalent to calling `reliefweb_get_country`
-- `iso3` must be a 3-letter ISO 3166-1 alpha-3 code
+- Country profile as `application/json` — uppercase ISO3 code, situation status, overview, and the active entries of each curated link list, with the report IDs their URLs name
+- `iso3` is a 3-letter ISO 3166-1 alpha-3 code, any case
+- Always returns the whole profile — no section selector; use `reliefweb_get_country` for an oversized profile or to page a list's archived entries
 
 ---
 
@@ -207,7 +221,7 @@ Search/list page limits above 1,000 and profile-archive limits above 100 are cla
 
 - Arguments: `country_or_disaster` required (name, ISO3 code, or GLIDE number); `focus` optional — `situation`, `jobs`, or `full` (default)
 - Returns one user message instructing the agent to gather data with the ReliefWeb tools, then synthesize a briefing citing report titles and dates
-- Resolves country names to ISO3 codes before filtered calls; keeps disaster-name and GLIDE searches separate
+- Resolves country names to ISO3 codes before filtered calls, with `reliefweb_list_countries` `text` first and the full listing as the fallback; keeps disaster-name and GLIDE searches separate
 
 ### `reliefweb-guide` <sub>skill</sub>
 
@@ -221,7 +235,8 @@ ReliefWeb-specific:
 
 - Full coverage of all six ReliefWeb content types: reports, disasters, countries, jobs, training, and sources
 - Compound filter builder supporting nested AND/OR conditions for the ReliefWeb API v2
-- Vocabulary matching for report `format`, disaster `status`, and training `cost` normalizes case, spacing, and punctuation instead of requiring exact ReliefWeb spelling
+- Vocabulary matching for report `format`, disaster `status`, training `cost`, job `job_type`, and `theme` / `career_category` normalizes case, spacing, and punctuation instead of requiring exact ReliefWeb spelling; `theme` and `career_category` also take standard abbreviations, those two and `job_type` take a word found in only one name, and anything ambiguous is rejected with the valid list
+- Country filters take ISO3 codes only; names and two-letter codes are rejected at the schema with a pointer to the `reliefweb_list_countries` name lookup
 - Date bounds reject impossible calendar dates and times locally; valid end-of-day `24:00` resolves to the next midnight
 - `RELIEFWEB_APP_NAME` validated at startup — required by the API since November 2025
 - 1,000 calls/day API quota, surfaced in each search and list tool's upstream-error recovery text
@@ -289,7 +304,7 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 
 ### Local development
 
-Requires [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+ for the built server).
+Requires [Bun v1.4.4](https://bun.sh/) or higher (or Node.js v24+ for the built server).
 
 ```sh
 git clone https://github.com/cyanheads/reliefweb-mcp-server.git

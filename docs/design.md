@@ -7,14 +7,14 @@
 | Name | Description | Key Inputs | Annotations |
 |:-----|:------------|:-----------|:------------|
 | `reliefweb_search_reports` | Search humanitarian reports with rich filtering by country, disaster, format, theme, date, source, and language. | `text`, `country`, `disaster_id`, `format`, `theme`, `language`, `source`, `date_from`, `date_to`, `sort`, `include_archived`, `filter`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_get_report` | Fetch a single report by ID with full body text, file attachments, and metadata. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
+| `reliefweb_get_report` | Fetch a single report by ID with full body text, file attachments, linked disasters, and metadata. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
 | `reliefweb_search_disasters` | Search active and historical disasters by type, country, status, and GLIDE number. | `text`, `country`, `disaster_type`, `status`, `glide`, `date_from`, `date_to`, `sort`, `include_archived`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_get_disaster` | Fetch a disaster record by ID including description, affected countries, and linked key content. Outlines its sections when over the response budget; pages a curated list's archived entries on request. | `id`, `sections`, `archive` | `readOnlyHint: true` |
+| `reliefweb_get_disaster` | Fetch a disaster record by ID including description, affected countries, and linked key content. Returns a profile overview identical to the description once, as the description. Outlines its sections when over the response budget; pages a curated list's archived entries on request. | `id`, `sections`, `archive` | `readOnlyHint: true` |
 | `reliefweb_get_country` | Fetch a country profile with overview, humanitarian situation summary, key content links, and active appeals/response plans. Outlines its sections when over the response budget; pages a curated list's archived entries on request. | `iso3`, `sections`, `archive` | `readOnlyHint: true` |
-| `reliefweb_list_countries` | List all countries and territories tracked by ReliefWeb, optionally filtered by crisis status. | `crisis_only`, `limit`, `offset` | `readOnlyHint: true` |
-| `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, career category, and theme. | `text`, `country`, `source`, `career_category`, `theme`, `experience`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_list_countries` | List the countries and territories tracked by ReliefWeb, looked up by name or filtered by crisis status. | `text`, `crisis_only`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_search_jobs` | Search humanitarian job listings by country, organization, job type, career category, and theme. | `text`, `country`, `source`, `job_type`, `career_category`, `theme`, `experience`, `sort`, `limit`, `offset` | `readOnlyHint: true` |
 | `reliefweb_get_job` | Fetch a job posting by ID with the full vacancy description, application instructions, dates, source, and taxonomy. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
-| `reliefweb_search_training` | Search humanitarian training by country, format, date, source, career category, cost, and listing or delivery language. Defaults to training starting from now when no date bound is given. | `text`, `country`, `source`, `format`, `career_category`, `language`, `cost`, `training_language`, `date_start_from`, `date_start_to`, `sort`, `include_archived`, `limit`, `offset` | `readOnlyHint: true` |
+| `reliefweb_search_training` | Search humanitarian training by country, format, date, source, career category, cost, and listing or delivery language. Defaults to training starting from now plus listings with no start date when no date bound is given. | `text`, `country`, `source`, `format`, `career_category`, `language`, `cost`, `training_language`, `date_start_from`, `date_start_to`, `sort`, `include_archived`, `limit`, `offset` | `readOnlyHint: true` |
 | `reliefweb_get_training` | Fetch a training listing by ID with the full description, registration instructions, event URL, cost and fee detail, dates, and languages. Outlines its sections when over the response budget. | `id`, `sections` | `readOnlyHint: true` |
 | `reliefweb_list_sources` | Browse source organizations that contribute content to ReliefWeb, optionally filtered by name or type. | `text`, `type`, `limit`, `offset` | `readOnlyHint: true` |
 
@@ -22,9 +22,9 @@
 
 | URI Template | Description | Pagination |
 |:-------------|:------------|:-----------|
-| `reliefweb://reports/{id}` | Full report record by ReliefWeb ID — metadata, body, file URLs. Always whole, never outlined. | No |
-| `reliefweb://disasters/{id}` | Disaster record by ReliefWeb ID — type, status, affected countries, GLIDE, description. Always whole, never outlined. | No |
-| `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, key content, response plans. | No |
+| `reliefweb://reports/{id}` | Full report record by ReliefWeb ID — metadata, body, file URLs, linked disasters. Always whole, never outlined. | No |
+| `reliefweb://disasters/{id}` | Disaster record by ReliefWeb ID — type, status, affected countries, GLIDE, description, profile overview (omitted and flagged when it repeats the description), curated-link report IDs. Always whole, never outlined. | No |
+| `reliefweb://countries/{iso3}` | Country profile by ISO3 code — overview, situation summary, key content, response plans, with curated-link report IDs. Always whole, never outlined. | No |
 
 ### Prompts
 
@@ -111,27 +111,39 @@ The complete `format.name` vocabulary, ordered by corpus size: `News and Press R
 
 Both are matched case-insensitively upstream, and `format.name` is analyzed rather than exact, so `"news and press release"`, `"News & Press Release"`, and `"news-and-press-release"` are working filter values, not typos. Disaster `status` is a keyword field: `alert archive` matches nothing upstream, so the canonicalizer resolves it to `alert-archive` before the query goes out.
 
+### Theme, Career-Category, and Job-Type Values
+
+Three more closed sets, each complete against its facet. `theme.name` has 20 values, shared by reports and jobs: `Protection and Human Rights`, `Health`, `Food and Nutrition`, `Shelter and Non-Food Items`, `Water Sanitation Hygiene`, `Agriculture`, `Coordination`, `Education`, `Contributions`, `Recovery and Reconstruction`, `Peacekeeping and Peacebuilding`, `Logistics and Telecommunications`, `Disaster Management`, `Safety and Security`, `Climate Change and Environment`, `Gender`, `Camp Coordination and Camp Management`, `Mine Action`, `HIV/Aids`, `Humanitarian Financing`. Jobs carry 17 of them — never `Contributions`, `Humanitarian Financing`, or `Logistics and Telecommunications` — so those resolve on jobs and return an empty page. `career_categories.name` has 12 values, shared by jobs and training: `Program/Project Management`, `Monitoring and Evaluation`, `Administration/Finance`, `Advocacy/Communications`, `Human Resources`, `Logistics/Procurement`, `Donor Relations/Grants Management`, `Information Management`, `Information and Communications Technology`, `Other`, `Medical/Clinical`, `Legal/Compliance`. Training carries 11 — never `Legal/Compliance`. Job `type.name` has 5 values: `Job`, `Consultancy`, `Internship`, `Tender/RFPs/EOIs`, `Volunteer Opportunity`.
+
+Resolution to the canonical spelling, per comma-separated value:
+
+1. The canonical name, ignoring case, spacing, and punctuation.
+2. An abbreviation, on the same key: `WASH`, `CCCM`, `NFI` for themes; `ICT`, `M&E`, `HR` for career categories.
+3. A word rule: a value resolves to the one name its words pick out when every word lies inside that name and at least one lies in no other name, with `and` ignored (`Protection` → `Protection and Human Rights`, `Logistics` → `Logistics/Procurement`, `Tender` → `Tender/RFPs/EOIs`). A word shared by two names (`Food`), words drawn from two names (`Food Security`, `Health Protection`), and words whose only home is shared are rejected.
+
+A comma list whose words together pick out one name is that name (`Food, Nutrition` is `Food and Nutrition`); otherwise each value resolves on its own. `theme` and `career_category` filter the whole tag (`theme.name.exact`, `career_categories.name.exact`), and several values must all be present (AND); several `job_type` values match any (OR), since a posting carries one type. An unresolved value fails as `unknown_theme`, `unknown_career_category`, or `unknown_job_type` with the valid list. `language` and `training_language` codes are case-insensitive and sent lower-cased, the form ReliefWeb stores.
+
 ### Key Filterable Fields
 
 | Field | Applies To | Notes |
 |:------|:-----------|:------|
-| `primary_country.iso3` | reports, disasters | ISO 3166-1 alpha-3 |
-| `country.iso3` | all content types | Multi-country tag |
+| `primary_country.iso3` | reports, disasters | ISO 3166-1 alpha-3, returned uppercase as `primaryCountryIso3` |
+| `country.iso3` | all content types | Multi-country tag. Filtered on `country.iso3.exact` with lower-cased codes, as stored: the analyzed field drops English stopwords, so `ARE` (United Arab Emirates) and `AND` (Andorra) match nothing there. Several codes are sent as an AND list: content tagged with every listed country. Report, disaster, job, and training records return the codes uppercase as `countryIso3s` |
 | `format.name` | reports, training | See format values above |
-| `theme.name` | reports, jobs, training | Sector/cross-cutting theme |
+| `theme.name` | reports, jobs | Sector/cross-cutting theme; whole-tag match, see above |
 | `disaster.id` | reports | Link reports to a disaster (integer ID) |
 | `glide` | disasters | GLIDE number (global disaster ID) |
-| `type.name` | disasters, jobs, sources | Disaster type (`type.name`), job type (`type.name`), org type (`type.name`); for disasters also `primary_type.name` for primary disaster type |
+| `type.name` | disasters, jobs, sources | Disaster type (`type.name`), job type (`type.name`, five values, see above), org type (`type.name`); for disasters also `primary_type.name` for primary disaster type |
 | `status` (disasters) | disasters | `alert`, `ongoing`, `past`, `alert-archive`. Filter directly: `{"field": "status", "value": ["alert", "ongoing"]}`. Presets already set defaults — use explicit filter only when overriding. |
 | `status` (countries) | countries | `ongoing` (active crisis) or `normal` (non-crisis). `crisis_only=true` filters to `ongoing`. |
 | `status` (sources) | sources | `active` or `inactive`. |
 | `date.original` | reports | Source publication date |
 | `date.created` | all | ReliefWeb index date |
 | `source.shortname` | reports, jobs, training | Organization abbreviation |
-| `language.code` | reports, training | ISO 639-1 |
+| `language.code` | reports, training | ISO 639-1, stored lower-case |
 | `training_language.code` | training | Delivery language, independent of listing language |
 | `cost` | training | `free` or `fee-based`; missing metadata stays absent |
-| `career_categories.name` | jobs, training | Humanitarian career track |
+| `career_categories.name` | jobs, training | Humanitarian career track; whole-tag match, see above |
 
 ---
 
@@ -145,25 +157,25 @@ Most humanitarians start here. A single POST to `/v2/reports` with structured fi
 |:--|:-----|:--------|
 | 1 | `POST /v2/reports` | Full-text + filter search with field selection |
 
-Fields requested for list view: `id`, `title`, `date.original`, `date.created`, `primary_country.name`, `country.name`, `source.shortname`, `format.name`, `theme.name`, `url_alias`, `file.url`, `headline.summary`.
+Fields requested for list view: `id`, `title`, `date.original`, `date.created`, `primary_country.name`, `primary_country.iso3`, `country.name`, `country.iso3`, `disaster.id`, `disaster.name`, `disaster.glide`, `source.shortname`, `format.name`, `theme.name`, `language.code`, `url_alias`, `file.url`, `headline.summary`. A report's linked disasters come back as `disasters: [{ id, name, glide? }]`, so a report row names the disaster ID `reliefweb_get_disaster` and the `disaster_id` filter take.
 
 Full body (`body`) only fetched in `reliefweb_get_report`.
 
 ### `reliefweb_get_country` — multi-field profile
 
-Country profiles contain nested `profile` subfields with key content sections. A single POST to `/v2/countries` with iso3 filter and `profile=full` covers the whole thing; no fan-out needed.
+Country profiles contain nested `profile` subfields with key content sections. A single POST to `/v2/countries` with an `iso3.exact` filter (lower-cased, which reaches the stopword codes `ARE` and `AND`) and `profile=full` covers the whole thing; no fan-out needed.
 
 | # | Call | Purpose |
 |:--|:-----|:--------|
 | 1 | `POST /v2/countries` with `{"filter": {"field": "iso3", "value": "<iso3>"}, "profile": "full"}` | Fetch full country profile with all sub-fields |
 
-The `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links` sub-arrays contain the curated links ReliefWeb maintains for the country — worth surfacing directly rather than forcing a separate reports search. Only the currently-active links are surfaced from each sub-array; the `archive` halves (which run to thousands of entries for long-running crises — SYR carries 2,328 archived `key_content` links and 120 archived `appeals_response_plans`) are dropped to keep the payload within the client token budget. An `archive: { list, offset, limit }` call reads the dropped half back, one bounded page at a time, from the same upstream record.
+The `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links` sub-arrays contain the curated links ReliefWeb maintains for the country — worth surfacing directly rather than forcing a separate reports search. Only the currently-active links are surfaced from each sub-array; the `archive` halves (which run to thousands of entries for long-running crises — SYR carries 2,328 archived `key_content` links and 120 archived `appeals_response_plans`) are dropped to keep the payload within the client token budget. An `archive: { list, offset, limit }` call reads the dropped half back, one bounded page at a time, from the same upstream record. Every entry, active or archived, carries a `reportId` when its URL is a ReliefWeb node link (`https://reliefweb.int/node/<id>`, with or without `/edit`), parsed from the URL and not verified — a removed report answers `not_found` from `reliefweb_get_report`. The profile's `iso3` is returned uppercase.
 
 Like the other detail tools, the profile is returned whole under the response budget and as a section outline over it.
 
 ### `reliefweb_get_disaster` — disaster with linked content
 
-One GET (`GET /v2/disasters/{id}?appname={name}&profile=full&preset=analysis`); the analysis preset includes archived disaster records. The `profile` sub-object on disasters contains the same key content structure as country profiles (`profile.overview`, `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links`). As with `reliefweb_get_country`, only the currently-active links in each sub-array are surfaced, and the dropped `archive` halves are reachable through the same `archive` selector. The `description` and `profile.overview` prose can together run to tens of KB for major disasters; the record is returned whole under the response budget and as a section outline over it, so a caller who wants one narrative asks for it by name.
+One GET (`GET /v2/disasters/{id}?appname={name}&profile=full&preset=analysis`); the analysis preset includes archived disaster records. The `profile` sub-object on disasters contains the same key content structure as country profiles (`profile.overview`, `profile.key_content`, `profile.appeals_response_plans`, `profile.useful_links`). As with `reliefweb_get_country`, only the currently-active links in each sub-array are surfaced, and the dropped `archive` halves are reachable through the same `archive` selector. The `description` and `profile.overview` prose can together run to tens of KB for major disasters; the record is returned whole under the response budget and as a section outline over it, so a caller who wants one narrative asks for it by name. When the overview is byte-identical to the description, the record carries the text once, as `description`, with `profileOverviewSameAsDescription: true` in place of `profileOverview`; an overview that differs (a prefix of the description plus link lists) is returned as stored. `sections: ["profileOverview"]` returns the stored overview. The tool and the resource share this rule. Curated-link entries carry `reportId` as on country profiles, and `primaryCountryIso3` / `countryIso3s` carry uppercase codes.
 
 ### `reliefweb_get_job` / `reliefweb_get_training` — detail behind the archive
 
@@ -178,15 +190,15 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | Tool | Parameter | Description text |
 |:-----|:----------|:-----------------|
 | all search tools | `text` | Full-text search query. Matches against title, body, and key metadata fields. Use plain natural language or keywords. |
-| all search tools | `country` | ISO 3166-1 alpha-3 country code (e.g., `SYR`, `AFG`, `UKR`). Filters to content tagged with this country. |
+| reports, disasters, jobs, training search | `country` | One or more ISO 3166-1 alpha-3 country codes in any case, separated by commas or spaces (e.g., `SYR`, or `SYR,AFG`). Filters to content tagged with every listed country; the filter echo shows the normalized list (`SYR,AFG`). A name, a two-letter code, or any token that is not three letters is rejected at the schema with a message pointing to `reliefweb_list_countries` `text`. A stray comma before the first code or after the last is ignored; commas with no code (`,`, ` , `) are rejected. Blank or whitespace-only is omitted. |
 | search/list tools | `limit` | Positive integer page size, maximum 1000 applied. Above-cap values clamp with a requested/applied notice by default; `RELIEFWEB_CLAMP_LIMITS=false` rejects them. Default 10 except countries (100). Each call counts against the 1,000-calls/day quota. |
 | all search tools | `offset` | Zero-based offset for pagination. Use with `limit` and `totalCount` from the response to page through large result sets. |
 | `reliefweb_search_reports` | `format` | Content format filter. One of: `News and Press Release`, `Situation Report`, `Map`, `Infographic`, `Analysis`, `Other`, `Assessment`, `Manual and Guideline`, `Appeal`, `UN Document`, `Evaluation and Lessons Learned`. Case, spacing, and punctuation ignored; any other value rejected with the valid list. |
-| `reliefweb_search_reports` | `theme` | Sector or cross-cutting theme (e.g., `Health`, `Food and Nutrition`, `Shelter and Non-Food Items`, `Protection`). Open-ended — matches `theme.name` exactly as ReliefWeb spells it. |
+| reports and jobs search | `theme` | Sector or cross-cutting theme. Resolves to the canonical theme names (see Theme, Career-Category, and Job-Type Values): a name, an abbreviation (`WASH`, `CCCM`, `NFI`), or a word found in only one name (`Protection`). Comma-separated themes must all be present. Anything else fails as `unknown_theme` with the valid list. Matches whole theme tags. |
 | `reliefweb_search_reports` | `date_from` | Earliest publication date. Filters on `date.original` (source publication date). Accepts a bare calendar date (`2024-01-15`, resolved to start of day UTC) or a full ISO 8601 datetime in any offset, resolved to UTC. |
 | `reliefweb_search_reports` | `date_to` | Latest publication date. Pair with `date_from` for a date range. A bare calendar date resolves to end of day UTC, so the range covers it in full. |
 | `reliefweb_search_reports` | `disaster_id` | ReliefWeb numeric disaster ID. Filters to reports linked to a specific disaster. Get the ID from `reliefweb_search_disasters`. |
-| `reliefweb_search_reports` | `language` | ISO 639-1 language code (e.g., `en`, `fr`, `es`, `ar`). Filters on `language.code`. |
+| `reliefweb_search_reports` | `language` | ISO 639-1 language code (e.g., `en`, `fr`, `es`, `ar`), case-insensitive and sent lower-cased. Filters on `language.code`. |
 | `reliefweb_search_reports` | `source` | Organization short name (e.g., `UNHCR`, `OCHA`, `WFP`). Filters on `source.shortname`. |
 | `reliefweb_search_reports` | `sort` | Sort order. Use `date.original:desc` for newest first (default), `date.original:asc` for oldest first, `score:desc` for relevance. |
 | `reliefweb_search_reports` | `include_archived` | No effect. Reports have no archived class, so every report is in scope whatever this is set to. Kept so existing calls keep working. |
@@ -194,18 +206,20 @@ Key `.describe()` text for implementation. Every parameter needs this — list o
 | `reliefweb_search_disasters` | `disaster_type` | Disaster type name (e.g., `Earthquake`, `Flood`, `Drought`, `Cyclone`). Filters on `type.name`. |
 | `reliefweb_search_disasters` | `status` | Disaster status filter. One of: `alert` (newly declared), `ongoing`, `past` (resolved), `alert-archive`. Comma-separate for multiple; case, spacing, and punctuation ignored; any other value rejected with the valid list. Default preset covers `alert`, `ongoing`, `past` — `alert-archive` additionally needs `include_archived: true`. |
 | `reliefweb_search_disasters` | `glide` | GLIDE number (global disaster identifier, e.g., `EQ-2023-000053-TUR`). Use for cross-system disaster correlation. |
-| `reliefweb_get_country` | `iso3` | ISO 3166-1 alpha-3 country code (e.g., `SYR`, `AFG`, `UKR`). Used to look up the country's ReliefWeb profile. |
+| `reliefweb_get_country` | `iso3` | ISO 3166-1 alpha-3 country code: exactly three letters in any case (e.g., `SYR`, `AFG`, `UKR`), returned uppercase. Used to look up the country's ReliefWeb profile; find a code by country name with `reliefweb_list_countries` `text`. |
+| `reliefweb_list_countries` | `text` | Country name to look up. Matches whole words of the ReliefWeb country name and short name, ignoring case and accents, and every word must match: `Syria` returns `SYR`, `Congo` returns `COD` and `COG`, `Ivory Coast` and a partial word such as `Syr` match nothing. The lookup is echoed as `effectiveQuery`; a miss says no country name or short name matched. Blank is omitted. |
 | `reliefweb_list_countries` | `crisis_only` | When true, filters to countries with an active humanitarian situation (status `ongoing`). |
-| jobs and training search | `career_category` | Humanitarian career track (e.g., `Program/Project Management`, `Information and Communications Technology`, `Logistics/Procurement`). Use ReliefWeb category names; matching is case-insensitive. Filters on `career_categories.name`. |
+| jobs and training search | `career_category` | Humanitarian career track. Resolves to the canonical category names (see Theme, Career-Category, and Job-Type Values): a name, an abbreviation (`ICT`, `M&E`, `HR`), or a word found in only one name (`Logistics`). Comma-separated categories must all be present. Anything else fails as `unknown_career_category` with the valid list. Matches whole career-category tags. |
+| `reliefweb_search_jobs` | `job_type` | Kind of engagement: `Job`, `Consultancy`, `Internship`, `Tender/RFPs/EOIs`, `Volunteer Opportunity`. A word found in only one type (`Tender`, `Volunteer`) also resolves; comma-separated types match any of them. Unknown values fail as `unknown_job_type` with the valid list. Filters on `type.name`. |
 | `reliefweb_search_jobs` | `experience` | Experience level (e.g., `0-2 years`, `3-4 years`, `5-9 years`). Filters on `experience.name`. |
 | `reliefweb_search_jobs` | `sort` | Sort order. `date.created:desc` for newest postings first (default), `date.closing:asc` to surface roles closing soonest, `score:desc` for relevance. |
 | `reliefweb_search_jobs` | `include_archived` | Search expired postings alongside the open ones. Uses `preset=analysis`. Off by default — the open set is a small fraction of the archive. |
-| `reliefweb_search_training` | `date_start_from` | Training start date lower bound. Filters on `date.start` — use to find training starting after a given date. Accepts a bare calendar date or a full ISO 8601 datetime. Omitting both start-date bounds defaults the lower bound to the current timestamp. |
-| `reliefweb_search_training` | `date_start_to` | Training start date upper bound. Filters on `date.start` — pair with `date_start_from` for a window. A bare calendar date resolves to end of day UTC. Supplying it alone leaves the lower bound open. |
-| `reliefweb_search_training` | `sort` | Sort order. `date.start:asc` for soonest-starting first (default), `date.start:desc` for latest-starting, `date.created:desc` for most recently posted, `score:desc` for relevance. |
-| `reliefweb_search_training` | `include_archived` | Search concluded listings alongside the current ones. Uses `preset=analysis`. Also drops the start-from-now default bound, so an otherwise unbounded search reaches the whole record. Off by default. |
+| `reliefweb_search_training` | `date_start_from` | Training start date lower bound. Filters on `date.start` — use to find training starting after a given date. Accepts a bare calendar date or a full ISO 8601 datetime. Omitting both start-date bounds scopes the search to training starting from the current timestamp plus listings with no start date; a supplied bound leaves undated listings out. |
+| `reliefweb_search_training` | `date_start_to` | Training start date upper bound. Filters on `date.start` — pair with `date_start_from` for a window. A bare calendar date resolves to end of day UTC. Supplying it alone leaves the lower bound open and undated listings out. |
+| `reliefweb_search_training` | `sort` | Sort order. Defaults to `date.start:asc, date.created:desc`: soonest-starting first, then listings with no start date, newest-posted first. Alternatives: `date.start:desc` for latest-starting, `date.created:desc` for most recently posted, `score:desc` for relevance; a supplied value is sent as the only key. |
+| `reliefweb_search_training` | `include_archived` | Search concluded listings alongside the current ones. Uses `preset=analysis`. Also drops the default scope (starting from now, plus undated listings), so an otherwise unbounded search reaches the whole record, dated or not. Off by default. |
 | `reliefweb_search_training` | `cost` | `free` or `fee-based`; case, spacing, and punctuation variants resolve to the canonical value. Unknown values fail as `unknown_cost`. |
-| `reliefweb_search_training` | `training_language` | Delivery-language code, filtering `training_language.code`. The separate `language` input keeps filtering the listing's `language.code`. |
+| `reliefweb_search_training` | `training_language` | Delivery-language code, case-insensitive and sent lower-cased, filtering `training_language.code`. The separate `language` input keeps filtering the listing's `language.code`. |
 | `reliefweb_list_sources` | `type` | Organization type. One of: `Non-governmental Organization`, `International Organization`, `Academic and Research Institution`, `Other`, `Government`, `Media`, `Red Cross/Red Crescent Movement`. Filters on `type.name`. |
 
 ---
@@ -246,13 +260,13 @@ The `preset=analysis` flag reaches archived disasters, expired job postings, and
 
 A crisis briefing is best served as a reusable prompt template (agent-invokable, client-surfaceable) rather than an instruction tool. It doesn't need live state from the server — it structures how the LLM should *use* the other tools. A prompt is the right primitive.
 
-Country-name inputs are resolved through the country listing before any ISO3-filtered call. The resolved code is reused across profiles, reports, disasters, jobs, and training; disaster names and GLIDE numbers retain their separate lookup/text-search branch.
+Country-name inputs are resolved to an ISO3 code before any ISO3-filtered call: `reliefweb_list_countries` with `text` first, then the full listing when the lookup misses, since `text` matches whole words of the official or short name and an exonym or partial name finds nothing. The resolved code is reused across profiles, reports, disasters, jobs, and training; disaster names and GLIDE numbers retain their separate lookup/text-search branch.
 
 ### 9. Oversized records outline rather than truncate, uniformly across all five by-ID detail tools
 
 A ReliefWeb document record can exceed what a client will accept — `reliefweb_get_disaster({ id: 51470 })` is about 72KB, `description` alone 36,849 chars and `profileOverview` 32,389. Returning it whole preserves the data only for clients whose limit is high enough, and truncating either hides data or silently desyncs `content[]` from `structuredContent`.
 
-The framework's outline-on-overflow primitive (`outlineOnOverflow` / `selectSections` / `formatOutline` from `@cyanheads/mcp-ts-core/utils`) is adopted as-is on all five by-ID detail tools — `reliefweb_get_country` included, since a major crisis profile is exactly the record that overflows. Under the framework's default budget the record comes back whole; over it, a complete section outline with each section's real serialized size and a re-call notice; a `sections: [...]` input re-fetches the record and projects it to those sections plus identity metadata. Nothing is truncated on any path.
+The framework's outline-on-overflow primitive (`outlineOnOverflow` / `selectSections` / `formatOutline` from `@cyanheads/mcp-ts-core/utils`) is adopted as-is on all five by-ID detail tools — `reliefweb_get_country` included, since a major crisis profile is exactly the record that overflows. Under the framework's default budget the record comes back whole; over it, a complete section outline with each section's real serialized size and a re-call notice; a `sections: [...]` input re-fetches the record and projects it to those sections plus identity metadata. Nothing is truncated on any path. For `reliefweb_get_disaster` the size check runs on the record as returned, after an overview identical to the description is dropped and flagged, so a disaster whose two identical copies would overflow the budget but whose single copy fits comes back whole; a `sections` selection restores the stored overview before projecting, so `profileOverview` remains a selectable name.
 
 Shared wiring lives in `src/mcp-server/tools/document-sections.ts` — the `sections` input, the output arms, the mode resolver, and the outline renderer. That module exists so a mechanism that behaves differently between two tools cannot happen; the mechanism itself is the framework's, not a local reimplementation.
 
@@ -302,6 +316,8 @@ The framework's `selectSections` throws `InvalidParams` (`-32602`) on a requeste
 | Invalid filter value | `InvalidParams` | ReliefWeb rejects the query — unrecognized sort field, invalid raw filter object, malformed date. Reason `invalid_query`; ReliefWeb's own explanation is folded into the error message so it reaches `content[]` as well as `structuredContent` | No — fix the input |
 | Impossible date or time | `InvalidParams` | Reason `invalid_date`, with the actual bound field and value. Calendar/time validation runs before UTC conversion and upstream I/O; valid zero-only `24:00` retains next-day semantics | No — fix the input |
 | Unknown training cost | `InvalidParams` | Reason `unknown_cost`, with valid cost choices | No — use a listed value |
+| Unknown theme, career category, or job type | `InvalidParams` | Reason `unknown_theme`, `unknown_career_category`, or `unknown_job_type`: the value names no single entry — unknown, a word shared by several names, or words from more than one. The message lists the valid values and the accepted abbreviations | No — use a listed value |
+| Country that is not an ISO3 code | `InvalidParams` | Schema rejection of a `country` filter or `reliefweb_get_country` `iso3` that is a name, a two-letter code, or not three letters; the message points to `reliefweb_list_countries` `text`. The country resource rejects the same input as a validation error with the same pointer | No — look the code up |
 | Record not found | `NotFound` | Valid ID format but no matching record | No — verify the ID |
 | Empty result set | Not an error | Valid query with zero matches — return empty array with `totalCount: 0` and a broaden-your-search notice | N/A |
 | Offset past the end | Not an error | Valid query, empty page, `totalCount > 0` — the notice names `totalCount` and the last reachable page offset instead of claiming nothing matched. Applies to every tool that pages: the four search tools, `list_sources`, and `list_countries` | N/A |
@@ -329,7 +345,7 @@ Retry on 5xx and network errors with exponential backoff. Do not retry 4xx respo
 - **No geospatial queries** — ReliefWeb's API filters by country, not bounding box or coordinates. Pairing with NWS/earthquake servers is the right path for geo-contextual disaster research.
 - **Publishing API is separate** — creating or updating ReliefWeb content requires a Publishing API key and separate auth flow. This server is read-only.
 - **Data quality is editorial, not real-time** — ReliefWeb content is curated by OCHA editors. There can be a lag between a disaster event and indexed reports.
-- **Training date fields differ from report date fields** — training uses `date.start` / `date.end` / `date.registration`, not `date.original`. The search tool exposes `date_start_from` / `date_start_to` accordingly, and defaults an unbounded search to a lower bound of the current timestamp so the first page is upcoming rather than long-past starts.
+- **Training date fields differ from report date fields, and many listings have no start date** — training uses `date.start` / `date.end` / `date.registration`, not `date.original`, and most online courses carry no `date.start` at all, so any start-date range excludes them. The search tool exposes `date_start_from` / `date_start_to` accordingly. An unbounded search is scoped to training starting from the current timestamp OR with no start date, so the first page is upcoming rather than long-past starts and online courses are not dropped; a supplied bound is a plain window that leaves undated listings out, and `include_archived` drops the scope.
 - **`disaster.id` vs `id` in filter context** — when filtering reports by disaster, use `disaster.id` (the integer field on reports pointing to the linked disaster), not `id` (the report's own ID).
 
 ---
@@ -354,7 +370,7 @@ https://api.reliefweb.int/v2/{content_type}?appname={RELIEFWEB_APP_NAME}
   "filter": {
     "operator": "AND|OR",
     "conditions": [
-      { "field": "country.iso3", "value": "SYR" },
+      { "field": "country.iso3.exact", "value": "syr" },
       { "field": "format.name", "value": ["Situation Report", "Assessment"], "operator": "OR" }
     ]
   },
@@ -386,7 +402,7 @@ Pass as `?profile=full` in GET requests or as `"profile": "full"` in POST body. 
 - `latest` — the same status filters plus sort by date desc
 - `analysis` — no status filters; reaches archived and expired content
 
-What the status filters exclude is per content type. Reports are unaffected — every preset returns the same records, since their `status` facet holds only `published` and `to-review` and no preset drops either. Disasters, jobs, and training each narrow under `minimal`/`latest` and open up under `analysis`; the counts are in Design Decision #7.
+What the status filters exclude is per content type. Reports are unaffected — every preset returns the same records, since their `status` facet holds only `published` and `to-review` and no preset drops either. Disasters, jobs, and training each narrow under `minimal`/`latest` and open up under `analysis` (Design Decision #7).
 
 ### Date Formats
 
@@ -445,3 +461,7 @@ A miss is `totalCount: 0` rather than a 404.
 | 2026-10-25 | Training search exposes cost and delivery language separately from listing language | Search summaries support shortlisting without fetching every record; full detail still supplies fee and registration instructions. Sparse metadata remains absent. |
 | 2026-10-25 | Clamp over-cap read limits by default, with a strict-mode switch and explicit notice | A bounded read can serve its supported page without a correction round trip. The schema retains its safe-integer ceiling, and the applied page size drives every echo and continuation; no byte cap or hidden second boundary is introduced. |
 | 2026-10-25 | Publish one ReliefWeb workflow guide through MCP skills | Identifier provenance and checks for historical completeness span multiple tools. A single guide carries those decisions without repeating individual input schemas. |
+| 2026-11-17 | The default training scope is "starts from now OR has no start date", sorted `date.start:asc, date.created:desc` | A ReliefWeb range filter excludes every record without `date.start`, and most current listings, nearly all online courses, have none (857 of 1,007 as of 2026-11-18), so a plain start-from-now bound dropped them without a notice while `totalCount` read as the full set. The OR clause keeps them; the two-key sort puts dated listings first, soonest, then undated ones, newest-posted. `appliedFilters.undatedIncluded` marks the scope, and a supplied bound stays a plain window. |
+| 2026-11-17 | `theme` and `career_category` resolve to canonical names and match whole tags, superseding free-form `career_category` matching | The analyzed `theme.name` and `career_categories.name` fields match a record when each word of the value appears in any of its tags, so a near-miss name, or a canonical name whose words also appear in another tag, returned a plausible non-empty total built from the wrong tags (`Food Security` matched only Safety and Security records; `Coordination` also returned Camp Coordination and Camp Management). Resolving first (name, abbreviation, or a word found in only one name) and sending the `.exact` subfield makes the filter mean one tag; several values are ANDed. An ambiguous word (`Food`) or a phrase mixing names (`Food Security`) fails with the valid list rather than guessing one name. `language` and `training_language` are lower-cased because ReliefWeb stores them that way and matches case-sensitively. |
+| 2026-11-17 | The `country` filter accepts ISO3 codes only, several of them ANDed | A country name or two-letter code was uppercased and sent upstream, returning an empty page that read as "no content for that country". The schema rejects anything that is not one or more three-letter codes, with a message pointing to `reliefweb_list_countries` `text`, which makes the name lookup one call instead of a scan of the full listing. Several codes keep the existing meaning, content tagged with every listed country, and are sent as an AND list. |
+| 2026-11-17 | `reliefweb_get_disaster` and `reliefweb://disasters/{id}` return an overview identical to the description once, flagged `profileOverviewSameAsDescription` | On 1,989 of the 2,454 disasters that carry both fields (81%, measured 2026-11-17), the overview is byte-identical to the description, so every such record carried the same text twice and its outline listed two equal sections. Dropping the copy and flagging it halves the record and runs the outline check on the real size; overviews that differ (a prefix of the description plus legacy link lists) cannot be deduplicated without a split point the record does not carry, so they stay. `sections: ["profileOverview"]` still returns the stored text. Callers that read `profileOverview` must read `description` when the flag is set. |

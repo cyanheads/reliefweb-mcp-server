@@ -4,7 +4,7 @@ description: Use reliefweb_* tools for country or disaster research and humanita
 license: Apache-2.0
 metadata:
   author: "cyanheads"
-  version: "1.0"
+  version: "1.1"
 ---
 
 ## Scope
@@ -13,9 +13,9 @@ Use ReliefWeb for curated humanitarian reports, country and disaster profiles, v
 
 ## Identifiers
 
-When the user gives a country name rather than an ISO3 code, find it with `reliefweb_list_countries` and reuse the returned ISO3 across the task. Do not substitute the name into a country filter. Resolve an unfamiliar organization with `reliefweb_list_sources` and use its returned shortname, not its numeric source ID. If no shortname is returned, do not invent one.
+When the user gives a country name rather than an ISO3 code, look it up with `reliefweb_list_countries` `text` and reuse the returned ISO3 across the task. `text` matches whole words of the country's name and short name, so when it finds nothing, read the full listing instead. A country filter takes ISO3 codes only and rejects a name. When a record already names the country, reuse its ISO3 codes (`primaryCountryIso3`, `countryIso3s`) rather than searching by name. Resolve an unfamiliar organization with `reliefweb_list_sources` and use its returned shortname, not its numeric source ID. If no shortname is returned, do not invent one.
 
-Resolve a disaster name or GLIDE number with `reliefweb_search_disasters`. Its numeric disaster ID identifies both the disaster detail and the disaster's linked reports; it is not a report ID. Report, job, and training searches yield IDs for their respective detail tools.
+Resolve a disaster name or GLIDE number with `reliefweb_search_disasters`. Its numeric disaster ID identifies both the disaster detail and the disaster's linked reports; it is not a report ID. A report already names its linked disasters (`disasters[].id`), so reuse those IDs instead of searching disasters by name. Curated-link entries on country and disaster profiles carry a `reportId` when the link is a ReliefWeb report; pass it to `reliefweb_get_report` rather than searching for the title. It is read from the URL and not verified, so `reliefweb_get_report` answers `not_found` for a report ReliefWeb has since removed. Report, job, and training searches yield IDs for their respective detail tools.
 
 ## Gates
 
@@ -41,7 +41,7 @@ For compound report conditions beyond named filters, use the report tool's raw f
 
 For a country-based shortlist, resolve ISO3 first. A disaster name or GLIDE number remains a text-search target for jobs and training; it is not a country code. Resolve the organizer separately when organization scope matters.
 
-Use role titles as text searches and career categories as career tracks; a sector/theme is a separate classification. Use current listings for an opportunities snapshot and archive-inclusive searches for posting or course history. Historical training also needs an explicit period when the task is period-specific; an ordinary unbounded training search starts from now.
+Use role titles as text searches and career categories as career tracks; a sector/theme is a separate classification. The kind of engagement (consultancy, internship, tender, volunteer) is the `job_type` filter, not a text search. Use current listings for an opportunities snapshot and archive-inclusive searches for posting or course history. Historical training also needs an explicit period when the task is period-specific; an ordinary unbounded training search covers training starting from now plus listings with no start date, most of them online courses, and puts the dated ones first. A supplied start-date bound leaves undated listings out, so a period-specific search does not see them.
 
 For training, distinguish the listing's language from the language of instruction. Use delivery-language and cost metadata for those requirements; an English listing can describe French-delivered training. Missing delivery-language or fee metadata does not establish a language or that a course is free.
 

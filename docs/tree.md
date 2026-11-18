@@ -1,6 +1,6 @@
 # reliefweb-mcp-server - Directory Structure
 
-Generated on: 2026-10-26 07:30:33
+Generated on: 2026-11-18 04:40:33
 
 ```text
 reliefweb-mcp-server/
@@ -168,8 +168,10 @@ reliefweb-mcp-server/
 │   │       │   ├── search-jobs.tool.ts
 │   │       │   ├── search-reports.tool.ts
 │   │       │   └── search-training.tool.ts
+│   │       ├── country-codes.ts
 │   │       ├── document-sections.ts
 │   │       ├── limits.ts
+│   │       ├── linked-disasters.ts
 │   │       ├── pagination.ts
 │   │       ├── plain-text-notice.ts
 │   │       └── profile-archive.ts
@@ -200,6 +202,7 @@ reliefweb-mcp-server/
 │   │   ├── upstream-errors.test.ts
 │   │   └── vocabularies.test.ts
 │   └── tools/
+│       ├── country-codes.test.ts
 │       ├── get-country.tool.test.ts
 │       ├── get-disaster.tool.test.ts
 │       ├── get-job.tool.test.ts
@@ -217,7 +220,9 @@ reliefweb-mcp-server/
 │       ├── search-reports.tool.test.ts
 │       ├── search-training.tool.test.ts
 │       ├── security.tool.test.ts
-│       └── upstream-error-data.tool.test.ts
+│       ├── training-default-scope.test.ts
+│       ├── upstream-error-data.tool.test.ts
+│       └── vocabulary-filters.tool.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitattributes
