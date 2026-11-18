@@ -4,8 +4,8 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInMemoryStorage, createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // validationError() uses JsonRpcErrorCode.ValidationError (-32007), not InvalidParams (-32602)
 const VALIDATION_CODE = JsonRpcErrorCode.ValidationError;
@@ -217,5 +217,54 @@ describe('reportResource', () => {
     await reportResource.handler({ id: '9007199254740991' }, ctx);
 
     expect(mockGetReport).toHaveBeenCalledWith(9007199254740991, ctx);
+  });
+});
+
+describe('report resource through the real service', () => {
+  afterEach(() => {
+    mockGetReport.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns linked disasters and uppercase ISO3 codes on the record', async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetReport.mockImplementation(service.getReport.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({
+        data: [
+          {
+            id: 4186055,
+            fields: {
+              title: 'Afghanistan Flash Update',
+              primary_country: { name: 'Afghanistan', iso3: 'afg' },
+              country: [{ name: 'Afghanistan', iso3: 'afg' }],
+              disaster: [
+                {
+                  id: 52467,
+                  name: 'Afghanistan: Earthquake - Nov 2025',
+                  glide: 'EQ-2025-000202-AFG',
+                  status: 'ongoing',
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    const ctx = createMockContext({ uri: new URL('reliefweb://reports/4186055') });
+
+    expect(await reportResource.handler({ id: '4186055' }, ctx)).toMatchObject({
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG'],
+      disasters: [
+        { id: 52467, name: 'Afghanistan: Earthquake - Nov 2025', glide: 'EQ-2025-000202-AFG' },
+      ],
+    });
   });
 });

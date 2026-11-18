@@ -9,6 +9,7 @@ import {
   createMockContext,
   runToolContract,
 } from '@cyanheads/mcp-ts-core/testing';
+import { DEFAULT_OUTLINE_BUDGET_BYTES } from '@cyanheads/mcp-ts-core/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetDisaster } from '@/mcp-server/tools/definitions/get-disaster.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -166,6 +167,203 @@ describe('archived disaster tool through the real service', () => {
       });
       expect(error.data).toMatchObject({ reason: 'not_found' });
     }
+  });
+});
+
+// ─── Description and profile overview ────────────────────────────────────────
+
+/** Two copies of a text this long exceed the outline budget; one copy fits. */
+const FITS_ONCE = 15_000;
+/** A text this long exceeds the outline budget on its own. */
+const OVER_BUDGET = 30_000;
+/** The legacy link list ReliefWeb appends to a description whose overview is its prefix. */
+const LINK_TAIL = '\n### Useful Links\n\n- [Situation map](https://example.org/map)';
+
+function overviewText(size: number): string {
+  return `Overview ${'x'.repeat(size - 9)}`;
+}
+
+/**
+ * Upstream disaster fields in the three shapes ReliefWeb serves: an overview identical to the
+ * description, an overview the description extends with a link list, and no overview at all.
+ */
+function overviewFields(shape: 'identical' | 'prefix' | 'absent', size: number) {
+  const text = overviewText(size);
+  return {
+    name: `Disaster with ${shape} overview`,
+    status: 'ongoing',
+    url_alias: `https://reliefweb.int/disaster/${shape}`,
+    description: shape === 'prefix' ? `${text}${LINK_TAIL}` : text,
+    ...(shape === 'absent' ? {} : { profile: { overview: text } }),
+  };
+}
+
+const OVERVIEW_ID = {
+  identicalFits: 401,
+  identicalOver: 402,
+  prefixSmall: 403,
+  prefixOver: 404,
+  absentFits: 405,
+  absentOver: 406,
+} as const;
+
+const OVERVIEW_FIXTURES = new Map<number, ReturnType<typeof overviewFields>>([
+  [OVERVIEW_ID.identicalFits, overviewFields('identical', FITS_ONCE)],
+  [OVERVIEW_ID.identicalOver, overviewFields('identical', OVER_BUDGET)],
+  [OVERVIEW_ID.prefixSmall, overviewFields('prefix', 1_000)],
+  [OVERVIEW_ID.prefixOver, overviewFields('prefix', FITS_ONCE)],
+  [OVERVIEW_ID.absentFits, overviewFields('absent', FITS_ONCE)],
+  [OVERVIEW_ID.absentOver, overviewFields('absent', OVER_BUDGET)],
+]);
+
+function contractText(result: Awaited<ReturnType<typeof runToolContract>>): string {
+  return result.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n');
+}
+
+/** Calls the tool and returns its typed structuredContent with the content[] text. */
+async function callTool(input: { id: number; sections?: string[] }) {
+  const result = await runToolContract(reliefwebGetDisaster, input);
+  expect(result.isError).not.toBe(true);
+  return {
+    record: reliefwebGetDisaster.output.parse(result.structuredContent),
+    text: contractText(result),
+  };
+}
+
+describe('description and profile overview through the real service', () => {
+  beforeEach(async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetDisaster.mockImplementation(service.getDisaster.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (request) => {
+      const id = Number(new URL(String(request)).pathname.split('/').at(-1));
+      const fields = OVERVIEW_FIXTURES.get(id);
+      return fields
+        ? Response.json({ data: [{ id, fields }] })
+        : new Response('{}', { status: 404 });
+    });
+  });
+  afterEach(() => {
+    mockGetDisaster.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns an identical overview once, flagged, so a record whose two copies outline now fits', async () => {
+    const copy = overviewText(FITS_ONCE);
+    const { record, text } = await callTool({ id: OVERVIEW_ID.identicalFits });
+
+    expect(record).toMatchObject({
+      kind: 'full',
+      description: copy,
+      profileOverviewSameAsDescription: true,
+    });
+    expect(record).not.toHaveProperty('profileOverview');
+    // The flip is real: with the second copy restored, the same record is over budget.
+    const { kind: _kind, profileOverviewSameAsDescription: _flag, ...stored } = record;
+    expect(JSON.stringify({ ...stored, profileOverview: copy }).length).toBeGreaterThan(
+      DEFAULT_OUTLINE_BUDGET_BYTES,
+    );
+
+    expect(text).toContain('**Profile overview:** same as description');
+    expect(text).not.toContain('## Overview');
+    expect(text.split(copy).length - 1).toBe(1);
+  });
+
+  it('outlines the deduplicated record when one copy alone is over budget, and resolves every name it lists', async () => {
+    const { record, text } = await callTool({ id: OVERVIEW_ID.identicalOver });
+
+    expect(record.kind).toBe('outline');
+    const names = record.sections?.map((s) => s.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['description', 'profileOverviewSameAsDescription']),
+    );
+    expect(names).not.toContain('profileOverview');
+    expect(record.sections?.find((s) => s.name === 'description')?.bytes).toBe(OVER_BUDGET + 2);
+    expect(text).toContain('profileOverviewSameAsDescription');
+
+    const flag = await callTool({
+      id: OVERVIEW_ID.identicalOver,
+      sections: ['profileOverviewSameAsDescription'],
+    });
+    expect(flag.record).toMatchObject({ kind: 'full', profileOverviewSameAsDescription: true });
+    expect(flag.record).not.toHaveProperty('description');
+    expect(flag.text).toContain('**Profile overview:** same as description');
+  });
+
+  it('returns an identical overview as stored when sections names it, and keeps it among the available names', async () => {
+    const copy = overviewText(OVER_BUDGET);
+    const { record, text } = await callTool({
+      id: OVERVIEW_ID.identicalOver,
+      sections: ['profileOverview'],
+    });
+
+    expect(Object.keys(record).sort()).toEqual([
+      'id',
+      'kind',
+      'name',
+      'profileOverview',
+      'urlAlias',
+    ]);
+    expect(record.profileOverview).toBe(copy);
+    expect(text).toContain(`## Overview\n\n${copy}`);
+
+    const err = await contractError(reliefwebGetDisaster, {
+      id: OVERVIEW_ID.identicalOver,
+      sections: ['situation'],
+    });
+    expect(err.data?.unmatched).toEqual(['situation']);
+    expect(err.data?.available).toEqual(expect.arrayContaining(['description', 'profileOverview']));
+  });
+
+  it('leaves prefix and absent overviews unchanged in full, outline, and selection modes', async () => {
+    const small = overviewText(1_000);
+    const prefixFull = await callTool({ id: OVERVIEW_ID.prefixSmall });
+    expect(prefixFull.record).toMatchObject({
+      kind: 'full',
+      description: `${small}${LINK_TAIL}`,
+      profileOverview: small,
+    });
+    expect(prefixFull.record).not.toHaveProperty('profileOverviewSameAsDescription');
+    expect(prefixFull.text).toContain(`## Overview\n\n${small}`);
+    expect(prefixFull.text).not.toContain('**Profile overview:**');
+
+    const absentFull = await callTool({ id: OVERVIEW_ID.absentFits });
+    expect(absentFull.record).toMatchObject({ kind: 'full', description: overviewText(FITS_ONCE) });
+    expect(absentFull.record).not.toHaveProperty('profileOverview');
+    expect(absentFull.record).not.toHaveProperty('profileOverviewSameAsDescription');
+    expect(absentFull.text).not.toContain('## Overview');
+    expect(absentFull.text).not.toContain('**Profile overview:**');
+
+    const prefixOutline = await callTool({ id: OVERVIEW_ID.prefixOver });
+    expect(prefixOutline.record.kind).toBe('outline');
+    const prefixNames = prefixOutline.record.sections?.map((s) => s.name);
+    expect(prefixNames).toEqual(expect.arrayContaining(['description', 'profileOverview']));
+    expect(prefixNames).not.toContain('profileOverviewSameAsDescription');
+
+    const absentOutline = await callTool({ id: OVERVIEW_ID.absentOver });
+    expect(absentOutline.record.kind).toBe('outline');
+    const absentNames = absentOutline.record.sections?.map((s) => s.name);
+    expect(absentNames).toContain('description');
+    expect(absentNames).not.toContain('profileOverview');
+    expect(absentNames).not.toContain('profileOverviewSameAsDescription');
+
+    const prefixSelected = await callTool({
+      id: OVERVIEW_ID.prefixOver,
+      sections: ['profileOverview'],
+    });
+    expect(prefixSelected.record.profileOverview).toBe(overviewText(FITS_ONCE));
+
+    const err = await contractError(reliefwebGetDisaster, {
+      id: OVERVIEW_ID.absentOver,
+      sections: ['profileOverview'],
+    });
+    expect(err.data?.unmatched).toEqual(['profileOverview']);
+    expect(err.data?.available).not.toContain('profileOverview');
+    expect(err.data?.available).not.toContain('profileOverviewSameAsDescription');
   });
 });
 
@@ -493,5 +691,92 @@ describe('reliefwebGetDisaster', () => {
     expect(text).toContain('profileOverview');
     expect(text).toContain('32391');
     expect(text).toContain(output.outlineNotice);
+  });
+});
+
+// ─── Identifiers for the next call ───────────────────────────────────────────
+
+describe('reliefwebGetDisaster — ISO3 codes and curated report IDs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function textOfContent(content: Array<{ type: string; text?: string }>): string {
+    return content.map((block) => block.text ?? '').join('\n');
+  }
+
+  it('carries both onto structuredContent and content[] on the full record', async () => {
+    const curated = {
+      keyContent: [
+        { title: 'Flash Update', url: 'https://reliefweb.int/node/4236883', reportId: 4236883 },
+      ],
+      appealsResponsePlans: [
+        {
+          title: 'Flash Appeal',
+          url: 'https://reliefweb.int/node/2611439/edit',
+          date: '2025-11-20',
+          reportId: 2611439,
+        },
+      ],
+      usefulLinks: [{ title: 'Partner page', url: 'https://example.org/response' }],
+    };
+    mockGetDisaster.mockResolvedValue({
+      id: 52467,
+      name: 'Afghanistan: Earthquake - Nov 2025',
+      primaryCountry: 'Afghanistan',
+      primaryCountryIso3: 'AFG',
+      countries: ['Afghanistan', 'Pakistan'],
+      countryIso3s: ['AFG', 'PAK'],
+      ...curated,
+    });
+
+    const result = await runToolContract(reliefwebGetDisaster, { id: 52467 });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      kind: 'full',
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG', 'PAK'],
+      ...curated,
+    });
+    expect(result.structuredContent).not.toHaveProperty('usefulLinks.0.reportId');
+    const text = textOfContent(result.content);
+    expect(text).toContain('**Primary country ISO3:** AFG');
+    expect(text).toContain('**Country ISO3 codes:** AFG, PAK');
+    expect(text).toContain('(<https://reliefweb.int/node/4236883>) — report ID 4236883');
+    expect(text).toContain('(2025-11-20) — report ID 2611439');
+    expect(text.match(/report ID/g)).toHaveLength(2);
+  });
+
+  it('carries report IDs on archive page entries', async () => {
+    mockGetDisasterArchive.mockResolvedValue({
+      id: 52467,
+      name: 'Afghanistan: Earthquake - Nov 2025',
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG'],
+      entries: [
+        { title: 'Archived update', url: 'https://reliefweb.int/node/4100001', reportId: 4100001 },
+        { title: 'Archived partner page', url: 'https://example.org/old' },
+      ],
+    });
+
+    const result = await runToolContract(reliefwebGetDisaster, {
+      id: 52467,
+      archive: { list: 'keyContent' },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      kind: 'archive',
+      primaryCountryIso3: 'AFG',
+      archive: {
+        entries: [{ reportId: 4100001 }, { title: 'Archived partner page' }],
+      },
+    });
+    expect(result.structuredContent).not.toHaveProperty('archive.entries.1.reportId');
+    const text = textOfContent(result.content);
+    expect(text).toContain('**Primary country ISO3:** AFG');
+    expect(text).toContain('(<https://reliefweb.int/node/4100001>) — report ID 4100001');
+    expect(text.match(/report ID/g)).toHaveLength(1);
   });
 });

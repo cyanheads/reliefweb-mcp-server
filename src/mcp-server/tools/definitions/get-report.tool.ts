@@ -15,6 +15,7 @@ import {
   renderOutline,
   sectionsInput,
 } from '@/mcp-server/tools/document-sections.js';
+import { LINKED_DISASTERS, linkedDisastersLine } from '@/mcp-server/tools/linked-disasters.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 
 /** Kept on every `sections` selection so a slice is still attributable to its record. */
@@ -30,7 +31,18 @@ const ReportFields = z.object({
   dateOriginal: z.string().describe('Source publication date (ISO 8601).'),
   dateCreated: z.string().describe('ReliefWeb index date (ISO 8601).'),
   primaryCountry: z.string().describe('Primary country name for this report.'),
+  primaryCountryIso3: z
+    .string()
+    .describe(
+      'Uppercase ISO3 code of the primary country — the form the country filters and reliefweb_get_country take.',
+    ),
   countries: z.array(z.string()).describe('All countries tagged on this report.'),
+  countryIso3s: z
+    .array(z.string())
+    .describe(
+      'Uppercase ISO3 codes of the countries tagged on this report — the form the country filters and reliefweb_get_country take.',
+    ),
+  disasters: LINKED_DISASTERS,
   sources: z.array(z.string()).describe('Publishing organizations (short names).'),
   formats: z.array(z.string()).describe('Content format names.'),
   themes: z.array(z.string()).describe('Humanitarian theme/sector names.'),
@@ -57,10 +69,7 @@ const ReportOutput = z.object({
 export const reliefwebGetReport = tool('reliefweb_get_report', {
   title: 'Get ReliefWeb Report',
   description:
-    'Fetch a single ReliefWeb report by its numeric ID with full body text, file attachments, and all metadata. ' +
-    'Use after reliefweb_search_reports to retrieve document content — body is excluded from search results to manage context budget. ' +
-    'Report bodies can be 10–100KB. A record over the response budget comes back as a section outline naming every section and its byte size; ' +
-    're-call with sections to pull only the ones needed. Nothing is truncated on either path.',
+    'Fetch a single ReliefWeb report by its numeric ID with full body text, file attachments, and all metadata. Use after reliefweb_search_reports to retrieve document content — body is excluded from search results to manage context budget. Report bodies can be 10–100KB. A record over the response budget comes back as a section outline naming every section and its byte size; re-call with sections to pull only the ones needed. Nothing is truncated on either path.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
@@ -113,8 +122,13 @@ function renderReport(result: z.infer<typeof ReportOutput>) {
   if (result.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(result.dateCreated)}`);
   if (result.primaryCountry)
     lines.push(`**Primary country:** ${escapeMarkdownInline(result.primaryCountry)}`);
+  if (result.primaryCountryIso3)
+    lines.push(`**Primary country ISO3:** ${escapeMarkdownInline(result.primaryCountryIso3)}`);
   if (result.countries?.length)
     lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.countryIso3s?.length)
+    lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(result.countryIso3s.join(', '))}`);
+  if (result.disasters?.length) lines.push(linkedDisastersLine(result.disasters));
   if (result.sources?.length)
     lines.push(`**Sources:** ${escapeMarkdownInline(result.sources.join(', '))}`);
   if (result.formats?.length)

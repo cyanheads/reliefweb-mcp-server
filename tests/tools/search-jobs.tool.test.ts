@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchJobs } from '@/mcp-server/tools/definitions/search-jobs.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -56,7 +56,7 @@ describe('reliefwebSearchJobs', () => {
     const input = reliefwebSearchJobs.input.parse({
       text: 'zzznomatch',
       country: 'ZZZ',
-      career_category: 'Nonexistent',
+      career_category: 'Legal/Compliance',
     });
     const result = await reliefwebSearchJobs.handler(input, ctx);
 
@@ -67,7 +67,7 @@ describe('reliefwebSearchJobs', () => {
     expect(enrichment.notice).toContain('zzznomatch');
   });
 
-  it('empty-result notice echoes source, theme, and experience filters', async () => {
+  it('empty-result notice echoes source, canonical theme, and experience filters', async () => {
     mockSearchJobs.mockResolvedValue({ items: [], totalCount: 0 });
 
     const ctx = createMockContext({ errors: reliefwebSearchJobs.errors });
@@ -80,7 +80,7 @@ describe('reliefwebSearchJobs', () => {
 
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('source="UNHCR"');
-    expect(notice).toContain('theme="Protection"');
+    expect(notice).toContain('theme="Protection and Human Rights"');
     expect(notice).toContain('experience="5-9 years"');
   });
 
@@ -133,7 +133,7 @@ describe('reliefwebSearchJobs', () => {
     const input = reliefwebSearchJobs.input.parse({ country: 'afg' });
     await reliefwebSearchJobs.handler(input, ctx);
 
-    expect(mockSearchJobs).toHaveBeenCalledWith(expect.objectContaining({ country: 'AFG' }), ctx);
+    expect(mockSearchJobs).toHaveBeenCalledWith(expect.objectContaining({ country: ['AFG'] }), ctx);
   });
 
   it('handles sparse job listing without optional fields', async () => {
@@ -283,5 +283,36 @@ describe('reliefwebSearchJobs — include_archived', () => {
     await reliefwebSearchJobs.handler(input, ctx);
 
     expect(getEnrichment(ctx).notice).toContain('include_archived=true');
+  });
+});
+
+// ─── Identifiers for the next call ───────────────────────────────────────────
+
+describe('reliefwebSearchJobs — ISO3 codes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries them onto structuredContent and content[] beside the country names', async () => {
+    mockSearchJobs.mockResolvedValue({
+      totalCount: 1,
+      items: [
+        {
+          id: 4221508,
+          title: 'Program Manager',
+          countries: ['Colombia', 'Venezuela (Bolivarian Republic of)'],
+          countryIso3s: ['COL', 'VEN'],
+        },
+      ],
+    });
+
+    const result = await runToolContract(reliefwebSearchJobs, {});
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ items: [{ countryIso3s: ['COL', 'VEN'] }] });
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Country ISO3 codes:** COL, VEN');
   });
 });

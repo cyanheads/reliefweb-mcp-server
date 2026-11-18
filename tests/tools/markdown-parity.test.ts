@@ -116,10 +116,13 @@ const record = {
   iso3: value,
   status: value,
   primaryCountry: value,
+  primaryCountryIso3: value,
   primaryType: value,
   glide: value,
   headlineSummary: value,
   countries: [value],
+  countryIso3s: [value],
+  disasters: [{ id: 2, name: value, glide: value }],
   sources: [value],
   types: [value],
   themes: [value],
@@ -152,6 +155,7 @@ const appliedFilters = {
   language: value,
   careerCategory: value,
   experience: value,
+  jobType: value,
   glide: value,
   disasterType: value,
   format: 'online',
@@ -249,8 +253,8 @@ describe('plain text and URL CommonMark parity', () => {
     },
   );
 
-  it('preserves curated and archive titles, dates, and URL targets', () => {
-    const entry = { title: value, date: value, url };
+  it('preserves curated and archive titles, dates, report IDs, and URL targets', () => {
+    const entry = { title: value, date: value, url, reportId: 4236883 };
     const active = curatedLinkLines({
       keyContent: [entry],
       appealsResponsePlans: [entry],
@@ -261,6 +265,7 @@ describe('plain text and URL CommonMark parity', () => {
     })[0]!.text;
     for (const text of [active, archived]) {
       expect(parsed(text).text).toContain(value);
+      expect(parsed(text).text).toContain('report ID 4236883');
       expect(parsed(text).links).toContain(url);
       expect(parsed(text).types).not.toContain('html_inline');
     }

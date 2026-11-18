@@ -28,7 +28,7 @@ describe('reliefwebSearchReports — edge cases', () => {
     await reliefwebSearchReports.handler(input, ctx);
 
     expect(mockSearchReports).toHaveBeenCalledWith(
-      expect.objectContaining({ country: 'AFG' }),
+      expect.objectContaining({ country: ['AFG'] }),
       ctx,
     );
   });

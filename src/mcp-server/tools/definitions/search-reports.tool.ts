@@ -6,7 +6,9 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { countryCodesInput, parseCountryCodes } from '@/mcp-server/tools/country-codes.js';
 import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
+import { LINKED_DISASTERS, linkedDisastersLine } from '@/mcp-server/tools/linked-disasters.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
 import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
 import {
@@ -25,17 +27,15 @@ import {
 import {
   REPORT_FORMATS,
   resolveVocabulary,
+  THEME_MATCHING,
+  THEMES,
   unknownValueMessage,
 } from '@/services/reliefweb/vocabularies.js';
 
 export const reliefwebSearchReports = tool('reliefweb_search_reports', {
   title: 'Search ReliefWeb Reports',
   description:
-    'Search humanitarian reports on ReliefWeb with filtering by country, disaster, format, theme, language, source, and date. ' +
-    'Returns paginated summaries — use reliefweb_get_report to fetch full body text. ' +
-    'Report body is excluded from results (10–100KB each); call get_report when document content is needed. ' +
-    'Every report is reachable by default — reports have no archived class, so include_archived has no effect here. ' +
-    'Note: each call counts against the 1,000 calls/day quota.',
+    'Search humanitarian reports on ReliefWeb with filtering by country, disaster, format, theme, language, source, and date. Returns paginated summaries — use reliefweb_get_report to fetch full body text. Report body is excluded from results (10–100KB each); call get_report when document content is needed. Every report is reachable by default — reports have no archived class, so include_archived has no effect here. Note: each call counts against the 1,000 calls/day quota.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
@@ -44,12 +44,7 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .describe(
         'Full-text search query. Matches against title, body, and key metadata fields. Use plain natural language or keywords.',
       ),
-    country: z
-      .string()
-      .optional()
-      .describe(
-        'ISO 3166-1 alpha-3 country code (e.g., SYR, AFG, UKR). Filters to content tagged with this country.',
-      ),
+    country: countryCodesInput('content'),
     disaster_id: z
       .number()
       .int()
@@ -67,12 +62,14 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .string()
       .optional()
       .describe(
-        'Sector or cross-cutting theme (e.g., Health, Food and Nutrition, Shelter and Non-Food Items, Protection). Open-ended — matches theme.name exactly as ReliefWeb spells it.',
+        `Sector or cross-cutting theme. One of: ${THEMES.join(', ')}. Also accepts the abbreviations ${Object.keys(THEME_MATCHING.aliases).join(', ')}, and a word found in only one theme name (Protection resolves to Protection and Human Rights). Separate several themes with commas to require all of them. Case, spacing, and punctuation are ignored; any other value is rejected with the valid list. Matches whole theme tags.`,
       ),
     language: z
       .string()
       .optional()
-      .describe('ISO 639-1 language code (e.g., en, fr, es, ar). Filters on language.code.'),
+      .describe(
+        'ISO 639-1 language code (e.g., en, fr, es, ar). Case-insensitive; sent lower-cased, the form ReliefWeb stores. Filters on language.code.',
+      ),
     source: z
       .string()
       .optional()
@@ -147,10 +144,23 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
             dateOriginal: z.string().optional().describe('Source publication date (ISO 8601).'),
             dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
             primaryCountry: z.string().optional().describe('Primary country name for this report.'),
+            primaryCountryIso3: z
+              .string()
+              .optional()
+              .describe(
+                'Uppercase ISO3 code of the primary country — the form the country filters and reliefweb_get_country take.',
+              ),
             countries: z
               .array(z.string())
               .optional()
               .describe('All countries tagged on this report.'),
+            countryIso3s: z
+              .array(z.string())
+              .optional()
+              .describe(
+                'Uppercase ISO3 codes of the countries tagged on this report — the form the country filters and reliefweb_get_country take.',
+              ),
+            disasters: LINKED_DISASTERS.optional(),
             sources: z
               .array(z.string())
               .optional()
@@ -174,14 +184,22 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
     appliedFilters: z
       .object({
         text: z.string().optional().describe('Full-text query the search used.'),
-        country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
+        country: z
+          .string()
+          .optional()
+          .describe('Country codes as normalized: uppercased ISO3, comma-separated when several.'),
         disasterId: z.number().optional().describe('Disaster ID filter applied.'),
         format: z
           .string()
           .optional()
           .describe('Format name filter applied, in its canonical ReliefWeb spelling.'),
-        theme: z.string().optional().describe('Theme name filter applied.'),
-        language: z.string().optional().describe('Language code filter applied.'),
+        theme: z
+          .string()
+          .optional()
+          .describe(
+            'Theme names applied, in canonical ReliefWeb spelling and comma-separated when several (reports must carry every one).',
+          ),
+        language: z.string().optional().describe('Language code filter applied, lower-cased.'),
         source: z.string().optional().describe('Source short name filter applied.'),
         dateFrom: z.string().optional().describe('Earliest publication date filter applied.'),
         dateTo: z.string().optional().describe('Latest publication date filter applied.'),
@@ -228,6 +246,13 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         'Use one of the format names listed in the error message; case, spacing, and punctuation do not matter, but the name itself must match.',
     },
     {
+      reason: 'unknown_theme',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A theme value names no single ReliefWeb theme — an unknown name, a word shared by several theme names, or words from more than one.',
+      recovery:
+        'Use a theme name from the list in the error message, or WASH, CCCM, or NFI; a single word works only when it appears in one theme name, such as Protection. Separate several themes with commas to require all of them.',
+    },
+    {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
       when: 'ReliefWeb rejected the query — possible causes include malformed text, an unrecognized sort field, an invalid raw filter object, or a malformed date.',
@@ -257,7 +282,8 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       limit: input.limit,
     });
 
-    const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+    const countryCodes = parseCountryCodes(input.country);
+    const country = countryCodes?.join(',');
     const resolveBound = (field: 'date_from' | 'date_to', bound: 'from' | 'to') => {
       try {
         return resolveDateBound(input[field], bound);
@@ -283,14 +309,23 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
         unknownValueMessage('format', format.unmatched, REPORT_FORMATS),
       );
     }
+    const theme = resolveVocabulary(input.theme, THEMES, THEME_MATCHING);
+    if (theme.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_theme',
+        unknownValueMessage('theme', theme.unmatched, THEMES, THEME_MATCHING),
+      );
+    }
+    // ReliefWeb stores language codes lower-cased, and the field matches case-sensitively.
+    const language = input.language?.trim().toLowerCase() || undefined;
 
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
       ...(country ? { country } : {}),
       ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
       ...(format.value ? { format: format.value } : {}),
-      ...(input.theme?.trim() ? { theme: input.theme } : {}),
-      ...(input.language?.trim() ? { language: input.language } : {}),
+      ...(theme.value ? { theme: theme.value } : {}),
+      ...(language ? { language } : {}),
       ...(input.source?.trim() ? { source: input.source } : {}),
       ...(dateFrom ? { dateFrom } : {}),
       ...(dateTo ? { dateTo } : {}),
@@ -310,11 +345,11 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       .searchReports(
         {
           ...(input.text?.trim() ? { text: input.text } : {}),
-          ...(country ? { country } : {}),
+          ...(countryCodes ? { country: countryCodes } : {}),
           ...(input.disaster_id != null ? { disasterId: input.disaster_id } : {}),
           ...(format.value ? { format: format.value } : {}),
-          ...(input.theme?.trim() ? { theme: input.theme } : {}),
-          ...(input.language?.trim() ? { language: input.language } : {}),
+          ...(theme.value ? { theme: theme.value } : {}),
+          ...(language ? { language } : {}),
           ...(input.source?.trim() ? { source: input.source } : {}),
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
@@ -358,14 +393,13 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       if (country) filters.push(`country=${country}`);
       if (input.disaster_id != null) filters.push(`disaster_id=${input.disaster_id}`);
       if (format.value) filters.push(`format="${format.value}"`);
-      if (input.theme) filters.push(`theme="${input.theme}"`);
-      if (input.language) filters.push(`language=${input.language}`);
+      if (theme.value) filters.push(`theme="${theme.value}"`);
+      if (language) filters.push(`language=${language}`);
       if (input.source) filters.push(`source="${input.source}"`);
       if (dateFrom) filters.push(`date_from=${dateFrom}`);
       if (dateTo) filters.push(`date_to=${dateTo}`);
       notices.push(
-        `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Try broadening the search by removing filters, using different keywords, or checking country codes.',
+        `No reports matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. Try broadening the search by removing filters, using different keywords, or checking country codes.`,
       );
     }
 
@@ -383,8 +417,13 @@ export const reliefwebSearchReports = tool('reliefweb_search_reports', {
       if (item.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(item.dateCreated)}`);
       if (item.primaryCountry)
         lines.push(`**Primary country:** ${escapeMarkdownInline(item.primaryCountry)}`);
+      if (item.primaryCountryIso3)
+        lines.push(`**Primary country ISO3:** ${escapeMarkdownInline(item.primaryCountryIso3)}`);
       if (item.countries?.length)
         lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
+      if (item.countryIso3s?.length)
+        lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(item.countryIso3s.join(', '))}`);
+      if (item.disasters?.length) lines.push(linkedDisastersLine(item.disasters));
       if (item.sources?.length)
         lines.push(`**Sources:** ${escapeMarkdownInline(item.sources.join(', '))}`);
       if (item.formats?.length)

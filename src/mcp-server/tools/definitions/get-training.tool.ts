@@ -37,6 +37,11 @@ const TrainingFields = z.object({
   dateCreated: z.string().describe('Date this listing was indexed (ISO 8601).'),
   sources: z.array(z.string()).describe('Organizing organizations (short names).'),
   countries: z.array(z.string()).describe('Countries tagged on this training.'),
+  countryIso3s: z
+    .array(z.string())
+    .describe(
+      'Uppercase ISO3 codes of the countries tagged on this training — the form the country filters and reliefweb_get_country take.',
+    ),
   cities: z.array(z.string()).describe('Host cities, for on-site training.'),
   themes: z.array(z.string()).describe('Humanitarian theme/sector names.'),
   formats: z.array(z.string()).describe('Training format names: on-site or online.'),
@@ -71,10 +76,7 @@ const TrainingOutput = z.object({
 export const reliefwebGetTraining = tool('reliefweb_get_training', {
   title: 'Get ReliefWeb Training',
   description:
-    'Fetch a training listing by ReliefWeb numeric ID with the full description, registration instructions, event link, cost and fee information, dates, languages, and organizing source. ' +
-    'Use after reliefweb_search_training, which returns summaries without the description, registration instructions, or cost detail. ' +
-    'Reaches concluded listings as well as current ones. A record over the response budget comes back as a section outline naming every section and its byte size; ' +
-    're-call with sections to pull only the ones needed. Nothing is truncated on either path.',
+    'Fetch a training listing by ReliefWeb numeric ID with the full description, registration instructions, event link, cost and fee information, dates, languages, and organizing source. Use after reliefweb_search_training, which returns summaries without the description, registration instructions, or cost detail. Reaches concluded listings as well as current ones. A record over the response budget comes back as a section outline naming every section and its byte size; re-call with sections to pull only the ones needed. Nothing is truncated on either path.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
@@ -131,6 +133,8 @@ function renderTraining(result: z.infer<typeof TrainingOutput>) {
     lines.push(`**Type:** ${escapeMarkdownInline(result.types.join(', '))}`);
   if (result.countries?.length)
     lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.countryIso3s?.length)
+    lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(result.countryIso3s.join(', '))}`);
   if (result.cities?.length)
     lines.push(`**Cities:** ${escapeMarkdownInline(result.cities.join(', '))}`);
   if (result.careerCategories?.length) {

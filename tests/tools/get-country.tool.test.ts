@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetCountry } from '@/mcp-server/tools/definitions/get-country.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -133,6 +133,7 @@ describe('reliefwebGetCountry', () => {
 
     await expect(reliefwebGetCountry.handler(input, ctx)).rejects.toMatchObject({
       data: { reason: 'not_found' },
+      message: expect.stringContaining('reliefweb_list_countries text'),
     });
   });
 
@@ -399,6 +400,7 @@ describe('reliefwebGetCountry', () => {
 
     await expect(reliefwebGetCountry.handler(input, ctx)).rejects.toMatchObject({
       data: { reason: 'not_found' },
+      message: expect.stringContaining('reliefweb_list_countries text'),
     });
   });
 
@@ -526,5 +528,80 @@ describe('reliefwebGetCountry', () => {
     const text = textOf(reliefwebGetCountry.format!(output));
     expect(text).toContain('**Next offset:** none');
     expect(text).toContain('Last One');
+  });
+});
+
+// ─── Identifiers for the next call ───────────────────────────────────────────
+
+describe('reliefwebGetCountry — curated report IDs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function textOfContent(content: Array<{ type: string; text?: string }>): string {
+    return content.map((block) => block.text ?? '').join('\n');
+  }
+
+  it('carries them onto structuredContent and content[] on every active list', async () => {
+    const curated = {
+      keyContent: [
+        { title: 'Key update', url: 'https://reliefweb.int/node/4236883', reportId: 4236883 },
+      ],
+      appealsResponsePlans: [
+        {
+          title: 'HRP 2025',
+          url: 'https://reliefweb.int/node/2611439/edit',
+          date: '2025-01-15',
+          reportId: 2611439,
+        },
+      ],
+      usefulLinks: [
+        { title: 'Node link', url: 'https://reliefweb.int/node/4100001', reportId: 4100001 },
+        { title: 'External', url: 'https://example.org/afghanistan' },
+      ],
+    };
+    mockGetCountry.mockResolvedValue({ id: 13, name: 'Afghanistan', iso3: 'AFG', ...curated });
+
+    const result = await runToolContract(reliefwebGetCountry, { iso3: 'AFG' });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ kind: 'full', iso3: 'AFG', ...curated });
+    expect(result.structuredContent).not.toHaveProperty('usefulLinks.1.reportId');
+    const text = textOfContent(result.content);
+    expect(text).toContain('(<https://reliefweb.int/node/4236883>) — report ID 4236883');
+    expect(text).toContain('(2025-01-15) — report ID 2611439');
+    expect(text).toContain('(<https://reliefweb.int/node/4100001>) — report ID 4100001');
+    expect(text.match(/report ID/g)).toHaveLength(3);
+  });
+
+  it('carries them onto archive page entries', async () => {
+    mockGetCountryArchive.mockResolvedValue({
+      id: 13,
+      name: 'Afghanistan',
+      iso3: 'AFG',
+      entries: [
+        {
+          title: 'Archived update',
+          url: 'https://reliefweb.int/node/697931/edit',
+          reportId: 697931,
+        },
+        { title: 'Archived slug link', url: 'https://reliefweb.int/report/afghanistan/old' },
+      ],
+    });
+
+    const result = await runToolContract(reliefwebGetCountry, {
+      iso3: 'AFG',
+      archive: { list: 'keyContent' },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      kind: 'archive',
+      archive: { entries: [{ reportId: 697931 }, { title: 'Archived slug link' }] },
+    });
+    expect(result.structuredContent).not.toHaveProperty('archive.entries.1.reportId');
+    const text = textOfContent(result.content);
+    expect(text).toContain('(<https://reliefweb.int/node/697931/edit>) — report ID 697931');
+    expect(text.match(/report ID/g)).toHaveLength(1);
   });
 });

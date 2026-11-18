@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { countryCodesInput, parseCountryCodes } from '@/mcp-server/tools/country-codes.js';
 import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
 import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
@@ -15,14 +16,21 @@ import {
   rejectedQueryMessage,
   upstreamErrorMessage,
 } from '@/services/reliefweb/upstream-errors.js';
+import {
+  CAREER_CATEGORIES,
+  CAREER_CATEGORY_MATCHING,
+  JOB_TYPE_MATCHING,
+  JOB_TYPES,
+  resolveVocabulary,
+  THEME_MATCHING,
+  THEMES,
+  unknownValueMessage,
+} from '@/services/reliefweb/vocabularies.js';
 
 export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
   title: 'Search ReliefWeb Jobs',
   description:
-    'Search humanitarian job listings on ReliefWeb by country, organization, career category, theme, and experience level. ' +
-    'Returns current open positions — expired postings are excluded by default. ' +
-    'Use include_archived=true to search the full history of postings, which is far larger than the open set. ' +
-    'Use text search for role titles and job descriptions.',
+    'Search humanitarian job listings on ReliefWeb by country, organization, job type, career category, theme, and experience level. Returns current open positions — expired postings are excluded by default. Use include_archived=true to search the full history of postings, which is far larger than the open set. Use text search for role titles and job descriptions, and job_type for the kind of engagement (consultancy, internship) — text search finds only some of those.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
@@ -31,27 +39,28 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .describe(
         'Full-text search query. Matches against job title, body, and key metadata fields.',
       ),
-    country: z
-      .string()
-      .optional()
-      .describe(
-        'ISO 3166-1 alpha-3 country code (e.g., SYR, AFG, UKR). Filters to jobs tagged with this country.',
-      ),
+    country: countryCodesInput('jobs'),
     source: z
       .string()
       .optional()
       .describe('Organization short name (e.g., UNHCR, OCHA, WFP). Filters on source.shortname.'),
+    job_type: z
+      .string()
+      .optional()
+      .describe(
+        `Kind of engagement. One of: ${JOB_TYPES.join(', ')}. A word found in only one type name also resolves (Tender, Volunteer). Separate several types with commas to match any of them — a posting carries one type. Case, spacing, and punctuation are ignored; any other value is rejected with the valid list. Filters on type.name.`,
+      ),
     career_category: z
       .string()
       .optional()
       .describe(
-        'ReliefWeb career-category name (e.g., Program/Project Management, Information and Communications Technology, Logistics/Procurement). Filters on career_categories.name.',
+        `ReliefWeb career category. One of: ${CAREER_CATEGORIES.join(', ')}. Also accepts the abbreviations ${Object.keys(CAREER_CATEGORY_MATCHING.aliases).join(', ')}, and a word found in only one category name (Logistics resolves to Logistics/Procurement). Separate several categories with commas to require all of them. Case, spacing, and punctuation are ignored; any other value is rejected with the valid list. Matches whole career-category tags.`,
       ),
     theme: z
       .string()
       .optional()
       .describe(
-        'Sector or cross-cutting theme (e.g., Health, Food and Nutrition, Protection). Filters on theme.name.',
+        `Sector or cross-cutting theme. One of: ${THEMES.join(', ')}. Also accepts the abbreviations ${Object.keys(THEME_MATCHING.aliases).join(', ')}, and a word found in only one theme name (Protection resolves to Protection and Human Rights). Separate several themes with commas to require all of them. Case, spacing, and punctuation are ignored; any other value is rejected with the valid list. Matches whole theme tags.`,
       ),
     experience: z
       .string()
@@ -96,6 +105,12 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
             dateClosing: z.string().optional().describe('Application closing date (ISO 8601).'),
             sources: z.array(z.string()).optional().describe('Hiring organizations (short names).'),
             countries: z.array(z.string()).optional().describe('Countries tagged on this job.'),
+            countryIso3s: z
+              .array(z.string())
+              .optional()
+              .describe(
+                'Uppercase ISO3 codes of the countries tagged on this job — the form the country filters and reliefweb_get_country take.',
+              ),
             themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
             types: z.array(z.string()).optional().describe('Job type names.'),
             careerCategories: z
@@ -117,10 +132,29 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
     appliedFilters: z
       .object({
         text: z.string().optional().describe('Full-text query the search used.'),
-        country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
+        country: z
+          .string()
+          .optional()
+          .describe('Country codes as normalized: uppercased ISO3, comma-separated when several.'),
         source: z.string().optional().describe('Source short name filter applied.'),
-        careerCategory: z.string().optional().describe('Career category name filter applied.'),
-        theme: z.string().optional().describe('Theme name filter applied.'),
+        jobType: z
+          .string()
+          .optional()
+          .describe(
+            'Job type names applied, in canonical ReliefWeb spelling and comma-separated when several (a posting of any of them matches).',
+          ),
+        careerCategory: z
+          .string()
+          .optional()
+          .describe(
+            'Career category names applied, in canonical ReliefWeb spelling and comma-separated when several (postings must carry every one).',
+          ),
+        theme: z
+          .string()
+          .optional()
+          .describe(
+            'Theme names applied, in canonical ReliefWeb spelling and comma-separated when several (postings must carry every one).',
+          ),
         experience: z.string().optional().describe('Experience level filter applied.'),
         sort: z.string().describe('Sort order the query used (resolved, including the default).'),
         preset: z
@@ -146,6 +180,27 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       ),
   },
   errors: [
+    {
+      reason: 'unknown_job_type',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A job_type value names no ReliefWeb job type.',
+      recovery:
+        'Use a job type from the list in the error message, or one word of it such as Tender or Volunteer. Separate several types with commas to match any of them.',
+    },
+    {
+      reason: 'unknown_career_category',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A career_category value names no single ReliefWeb career category — an unknown name, a word shared by several category names, or words from more than one.',
+      recovery:
+        'Use a career category from the list in the error message, or ICT, M&E, or HR; a single word works only when it appears in one category name, such as Logistics. Separate several categories with commas to require all of them.',
+    },
+    {
+      reason: 'unknown_theme',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A theme value names no single ReliefWeb theme — an unknown name, a word shared by several theme names, or words from more than one.',
+      recovery:
+        'Use a theme name from the list in the error message, or WASH, CCCM, or NFI; a single word works only when it appears in one theme name, such as Protection. Separate several themes with commas to require all of them.',
+    },
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.InvalidParams,
@@ -177,14 +232,46 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       limit: input.limit,
     });
 
-    const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+    const countryCodes = parseCountryCodes(input.country);
+    const country = countryCodes?.join(',');
+    const jobType = resolveVocabulary(input.job_type, JOB_TYPES, JOB_TYPE_MATCHING);
+    if (jobType.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_job_type',
+        unknownValueMessage('job_type', jobType.unmatched, JOB_TYPES, JOB_TYPE_MATCHING),
+      );
+    }
+    const careerCategory = resolveVocabulary(
+      input.career_category,
+      CAREER_CATEGORIES,
+      CAREER_CATEGORY_MATCHING,
+    );
+    if (careerCategory.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_career_category',
+        unknownValueMessage(
+          'career_category',
+          careerCategory.unmatched,
+          CAREER_CATEGORIES,
+          CAREER_CATEGORY_MATCHING,
+        ),
+      );
+    }
+    const theme = resolveVocabulary(input.theme, THEMES, THEME_MATCHING);
+    if (theme.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_theme',
+        unknownValueMessage('theme', theme.unmatched, THEMES, THEME_MATCHING),
+      );
+    }
 
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
       ...(country ? { country } : {}),
       ...(input.source?.trim() ? { source: input.source } : {}),
-      ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
-      ...(input.theme?.trim() ? { theme: input.theme } : {}),
+      ...(jobType.value ? { jobType: jobType.value } : {}),
+      ...(careerCategory.value ? { careerCategory: careerCategory.value } : {}),
+      ...(theme.value ? { theme: theme.value } : {}),
       ...(input.experience?.trim() ? { experience: input.experience } : {}),
       sort: input.sort?.trim() || 'date.created:desc',
       preset: input.include_archived ? 'analysis' : 'latest',
@@ -196,10 +283,11 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       .searchJobs(
         {
           ...(input.text?.trim() ? { text: input.text } : {}),
-          ...(country ? { country } : {}),
+          ...(countryCodes ? { country: countryCodes } : {}),
           ...(input.source?.trim() ? { source: input.source } : {}),
-          ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
-          ...(input.theme?.trim() ? { theme: input.theme } : {}),
+          ...(jobType.value ? { jobType: jobType.value } : {}),
+          ...(careerCategory.value ? { careerCategory: careerCategory.value } : {}),
+          ...(theme.value ? { theme: theme.value } : {}),
           ...(input.experience?.trim() ? { experience: input.experience } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
           ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
@@ -238,13 +326,12 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
       if (input.text) filters.push(`text="${input.text}"`);
       if (country) filters.push(`country=${country}`);
       if (input.source) filters.push(`source="${input.source}"`);
-      if (input.career_category) filters.push(`career_category="${input.career_category}"`);
-      if (input.theme) filters.push(`theme="${input.theme}"`);
+      if (jobType.value) filters.push(`job_type="${jobType.value}"`);
+      if (careerCategory.value) filters.push(`career_category="${careerCategory.value}"`);
+      if (theme.value) filters.push(`theme="${theme.value}"`);
       if (input.experience) filters.push(`experience="${input.experience}"`);
       notice(
-        `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Try broader keywords, remove the country filter, check the career category spelling, ' +
-          'or set include_archived=true to search expired postings as well.',
+        `No jobs matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. Try broader keywords, remove the country, job_type, career_category, or theme filter, or set include_archived=true to search expired postings as well.`,
       );
     }
 
@@ -260,6 +347,8 @@ export const reliefwebSearchJobs = tool('reliefweb_search_jobs', {
         lines.push(`**Organization:** ${escapeMarkdownInline(item.sources.join(', '))}`);
       if (item.countries?.length)
         lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
+      if (item.countryIso3s?.length)
+        lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(item.countryIso3s.join(', '))}`);
       if (item.careerCategories?.length)
         lines.push(
           `**Career category:** ${escapeMarkdownInline(item.careerCategories.join(', '))}`,
@@ -287,6 +376,7 @@ function renderAppliedFilters(f: {
   text?: string | undefined;
   country?: string | undefined;
   source?: string | undefined;
+  jobType?: string | undefined;
   careerCategory?: string | undefined;
   theme?: string | undefined;
   experience?: string | undefined;
@@ -299,6 +389,7 @@ function renderAppliedFilters(f: {
   if (f.text != null) parts.push(`text="${escapeMarkdownInline(f.text)}"`);
   if (f.country != null) parts.push(`country=${escapeMarkdownInline(f.country)}`);
   if (f.source != null) parts.push(`source="${escapeMarkdownInline(f.source)}"`);
+  if (f.jobType != null) parts.push(`jobType=${escapeMarkdownInline(f.jobType)}`);
   if (f.careerCategory != null)
     parts.push(`careerCategory="${escapeMarkdownInline(f.careerCategory)}"`);
   if (f.theme != null) parts.push(`theme="${escapeMarkdownInline(f.theme)}"`);

@@ -2,8 +2,8 @@
  * @fileoverview Shared curated-list wiring for the two curated-profile tools
  * (`reliefweb_get_country`, `reliefweb_get_disaster`). Those tools return only the active
  * half of each curated list; this module pins the input selector, the output page, the
- * pagination arithmetic, and the renderers for both halves, so the two tools page an archive
- * and present a list the same way.
+ * pagination arithmetic, the `reportId` an entry carries, and one entry renderer for both
+ * halves, so the two tools page an archive and present a list the same way.
  *
  * Two selectors live on those tools and they are deliberately different words for different
  * axes: `sections` (from `document-sections.ts`) names which parts of the record to return,
@@ -36,6 +36,17 @@ export const PROFILE_KIND = z
 
 const ARCHIVE_LIST = z.enum(PROFILE_ARCHIVE_LISTS);
 
+/**
+ * The `reportId` every curated entry can carry, active or archived, on both profile tools.
+ * One schema so the caveat that it is read rather than verified reads the same everywhere.
+ */
+export const CURATED_REPORT_ID = z
+  .number()
+  .optional()
+  .describe(
+    'ReliefWeb report ID, read from the entry URL when it is a ReliefWeb node link (https://reliefweb.int/node/<id>, with or without /edit) — pass it to reliefweb_get_report. Parsed from the link, not verified: a report ReliefWeb has since removed answers not_found. Absent for any other URL.',
+  );
+
 const ArchivePageShape = z.object({
   list: ARCHIVE_LIST.describe('The curated list this page was read from.'),
   total: z.number().describe('Total archived entries in that list for this record.'),
@@ -57,6 +68,7 @@ const ArchivePageShape = z.object({
             .string()
             .optional()
             .describe('Publication date, carried by appeals and response plans.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('One archived entry.'),
     )
@@ -100,10 +112,7 @@ export function archiveInput(subject: string) {
     })
     .optional()
     .describe(
-      `Archive mode: return a page of one curated list's ARCHIVED entries instead of the ${subject} record. ` +
-        'The response carries the record identity, the selected list, and total / shown / offset, plus a next offset while more entries remain. ' +
-        'Mutually exclusive with sections — sections slices the record, archive replaces it — and a call supplying both is rejected. ' +
-        'A record over the response budget still answers an archive call with the page: a page is bounded by limit and carries none of the record prose, so it never outlines.',
+      `Archive mode: return a page of one curated list's ARCHIVED entries instead of the ${subject} record. The response carries the record identity, the selected list, and total / shown / offset, plus a next offset while more entries remain. Mutually exclusive with sections — sections slices the record, archive replaces it — and a call supplying both is rejected. A record over the response budget still answers an archive call with the page: a page is bounded by limit and carries none of the record prose, so it never outlines.`,
     );
 }
 
@@ -161,12 +170,26 @@ export function renderArchive(result: { archive?: ArchivePage | undefined }): Ar
         : `\nNo archived entries at this offset — the archive holds ${page.total}, so the last one is at offset ${page.total - 1}.`,
     );
   }
-  for (const entry of page.entries) {
-    lines.push(
-      `- ${markdownLink(entry.title, entry.url)}${entry.date ? ` (${escapeMarkdownInline(entry.date)})` : ''}`,
-    );
-  }
+  lines.push(...page.entries.map(curatedEntryLine));
   return [{ type: 'text', text: lines.join('\n') }];
+}
+
+/** A curated entry as either half of a list renders it. */
+type CuratedEntry = {
+  date?: string | undefined;
+  reportId?: number | undefined;
+  title: string;
+  url: string;
+};
+
+/**
+ * One curated entry as a list item: its link, its date when it has one, and the report ID its
+ * URL names when it names one. Active and archived entries render through here alike.
+ */
+function curatedEntryLine(entry: CuratedEntry): string {
+  const date = entry.date ? ` (${escapeMarkdownInline(entry.date)})` : '';
+  const report = entry.reportId === undefined ? '' : ` — report ID ${entry.reportId}`;
+  return `- ${markdownLink(entry.title, entry.url)}${date}${report}`;
 }
 
 /**
@@ -176,28 +199,18 @@ export function renderArchive(result: { archive?: ArchivePage | undefined }): Ar
  * its own presence, so a sparse profile simply omits it.
  */
 export function curatedLinkLines(result: {
-  appealsResponsePlans?:
-    | Array<{ date?: string | undefined; title: string; url: string }>
-    | undefined;
-  keyContent?: Array<{ title: string; url: string }> | undefined;
-  usefulLinks?: Array<{ title: string; url: string }> | undefined;
+  appealsResponsePlans?: CuratedEntry[] | undefined;
+  keyContent?: CuratedEntry[] | undefined;
+  usefulLinks?: CuratedEntry[] | undefined;
 }): string[] {
+  const lists = [
+    ['Key Content', result.keyContent],
+    ['Appeals & Response Plans', result.appealsResponsePlans],
+    ['Useful Links', result.usefulLinks],
+  ] as const;
   const lines: string[] = [];
-  if (result.keyContent?.length) {
-    lines.push('\n## Key Content');
-    for (const kc of result.keyContent) lines.push(`- ${markdownLink(kc.title, kc.url)}`);
-  }
-  if (result.appealsResponsePlans?.length) {
-    lines.push('\n## Appeals & Response Plans');
-    for (const ap of result.appealsResponsePlans) {
-      lines.push(
-        `- ${markdownLink(ap.title, ap.url)}${ap.date ? ` (${escapeMarkdownInline(ap.date)})` : ''}`,
-      );
-    }
-  }
-  if (result.usefulLinks?.length) {
-    lines.push('\n## Useful Links');
-    for (const ul of result.usefulLinks) lines.push(`- ${markdownLink(ul.title, ul.url)}`);
+  for (const [heading, entries] of lists) {
+    if (entries?.length) lines.push(`\n## ${heading}`, ...entries.map(curatedEntryLine));
   }
   return lines;
 }

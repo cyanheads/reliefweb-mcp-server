@@ -36,6 +36,11 @@ const JobFields = z.object({
   dateChanged: z.string().describe('Date this posting was last modified (ISO 8601).'),
   sources: z.array(z.string()).describe('Hiring organizations (short names).'),
   countries: z.array(z.string()).describe('Countries tagged on this job.'),
+  countryIso3s: z
+    .array(z.string())
+    .describe(
+      'Uppercase ISO3 codes of the countries tagged on this job — the form the country filters and reliefweb_get_country take.',
+    ),
   themes: z.array(z.string()).describe('Humanitarian theme/sector names.'),
   types: z.array(z.string()).describe('Job type names, such as Job or Consultancy.'),
   careerCategories: z.array(z.string()).describe('Career category names (humanitarian tracks).'),
@@ -60,10 +65,7 @@ const JobOutput = z.object({
 export const reliefwebGetJob = tool('reliefweb_get_job', {
   title: 'Get ReliefWeb Job',
   description:
-    'Fetch a job posting by ReliefWeb numeric ID with the full vacancy description, application instructions, dates, hiring organization, and location and taxonomy metadata. ' +
-    'Use after reliefweb_search_jobs, which returns summaries without the description or application instructions. ' +
-    'Reaches expired postings as well as open ones. A record over the response budget comes back as a section outline naming every section and its byte size; ' +
-    're-call with sections to pull only the ones needed. Nothing is truncated on either path.',
+    'Fetch a job posting by ReliefWeb numeric ID with the full vacancy description, application instructions, dates, hiring organization, and location and taxonomy metadata. Use after reliefweb_search_jobs, which returns summaries without the description or application instructions. Reaches expired postings as well as open ones. A record over the response budget comes back as a section outline naming every section and its byte size; re-call with sections to pull only the ones needed. Nothing is truncated on either path.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
@@ -113,6 +115,8 @@ function renderJob(result: z.infer<typeof JobOutput>) {
     lines.push(`**Organization:** ${escapeMarkdownInline(result.sources.join(', '))}`);
   if (result.countries?.length)
     lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.countryIso3s?.length)
+    lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(result.countryIso3s.join(', '))}`);
   if (result.careerCategories?.length) {
     lines.push(`**Career category:** ${escapeMarkdownInline(result.careerCategories.join(', '))}`);
   }

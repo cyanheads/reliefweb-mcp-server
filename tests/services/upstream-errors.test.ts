@@ -206,6 +206,58 @@ describe('upstreamHttpError — client-visible data', () => {
   );
 });
 
+/**
+ * ReliefWeb's own 400 envelopes, as the API returns them for a raw filter naming an unknown
+ * field and for a range bound that is not an ISO 8601 date.
+ */
+const RW_400_FILTER_FIELD = JSON.stringify({
+  status: 400,
+  time: 2,
+  error: {
+    type: 'UnexpectedValueException',
+    message:
+      "Unrecognized filter field 'bogus.key'. Check the entity information for available fields.",
+  },
+});
+const RW_400_DATE_RANGE = JSON.stringify({
+  status: 400,
+  time: 3,
+  error: {
+    type: 'UnexpectedValueException',
+    message: "Invalid range 'from' value for field 'date.created'. It must be an ISO 8601 date.",
+  },
+});
+
+/**
+ * Runs against a real `Response`, so the framework's own body capture is in the path. The
+ * framework keeps a captured body off client envelopes (server-only `data.body`); the
+ * explanation must still be read from it server-side and carried on the allowlisted fields.
+ */
+describe('upstreamHttpError — real Response through the framework body capture', () => {
+  it.each([
+    ['an unknown filter field', RW_400_FILTER_FIELD],
+    ['a rejected date range bound', RW_400_DATE_RANGE],
+  ])('quotes ReliefWeb on %s', async (_label, body) => {
+    const detail = (JSON.parse(body) as { error: { message: string } }).error.message;
+    const response = new Response(body, {
+      status: 400,
+      statusText: 'Bad Request',
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const err = await upstreamHttpError(response, { contentType: 'reports' });
+
+    expect(err.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(err.message).toBe(`ReliefWeb returned HTTP 400 Bad Request. ${detail}`);
+    expect(err.data).toEqual({ contentType: 'reports', upstreamMessage: detail });
+    expect(rejectedQueryMessage('reports', err)).toBe(
+      `ReliefWeb rejected the reports query: ${detail}`,
+    );
+    const cause = err.cause as McpError;
+    expect(cause.data?.body).toBe(body);
+  });
+});
+
 describe('isRejectedQueryError', () => {
   it.each([
     ['InvalidParams (400)', JsonRpcErrorCode.InvalidParams],

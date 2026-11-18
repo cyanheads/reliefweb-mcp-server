@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchDisasters } from '@/mcp-server/tools/definitions/search-disasters.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -344,5 +344,41 @@ describe('reliefwebSearchDisasters — offset past the end of the result set', (
     await reliefwebSearchDisasters.handler(input, ctx);
 
     expect(getEnrichment(ctx).notice).toContain('No disasters matched');
+  });
+});
+
+// ─── Identifiers for the next call ───────────────────────────────────────────
+
+describe('reliefwebSearchDisasters — ISO3 codes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries them onto structuredContent and content[] beside the country names', async () => {
+    mockSearchDisasters.mockResolvedValue({
+      totalCount: 1,
+      items: [
+        {
+          id: 52467,
+          name: 'Afghanistan: Earthquake - Nov 2025',
+          primaryCountry: 'Afghanistan',
+          primaryCountryIso3: 'AFG',
+          countries: ['Afghanistan', 'Pakistan'],
+          countryIso3s: ['AFG', 'PAK'],
+        },
+      ],
+    });
+
+    const result = await runToolContract(reliefwebSearchDisasters, {});
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      items: [{ primaryCountryIso3: 'AFG', countryIso3s: ['AFG', 'PAK'] }],
+    });
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Primary country ISO3:** AFG');
+    expect(text).toContain('**Country ISO3 codes:** AFG, PAK');
   });
 });

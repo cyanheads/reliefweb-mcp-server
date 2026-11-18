@@ -73,7 +73,9 @@ describe.each([
 describe.each([reliefwebSearchJobs, reliefwebSearchTraining])(
   '$name career taxonomy',
   (definition) => {
-    it('keeps arbitrary and case-variant career names accepted', () => {
+    // The schema only carries the string: the handler checks it against the career-category
+    // vocabulary (unknown_career_category), tabled in vocabulary-filters.tool.test.ts.
+    it('passes unknown and case-variant career_category strings through the schema unchanged', () => {
       expect(definition.input.parse({ career_category: 'Nonexistent' }).career_category).toBe(
         'Nonexistent',
       );

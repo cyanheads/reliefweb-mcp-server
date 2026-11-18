@@ -137,6 +137,31 @@ describe('countryResource', () => {
     }
   });
 
+  it.each(['Syria', '1@!'])('rejects %j with a message naming the text lookup', async (iso3) => {
+    const ctx = createMockContext({ uri: new URL('reliefweb://countries/x') });
+    await expect(countryResource.handler({ iso3 }, ctx)).rejects.toMatchObject({
+      code: VALIDATION_CODE,
+      message: expect.stringMatching(/reliefweb_list_countries text/),
+    });
+    expect(mockGetCountry).not.toHaveBeenCalled();
+  });
+
+  it('names the text lookup when no profile matches', async () => {
+    mockGetCountry.mockResolvedValue(null);
+    const ctx = createMockContext({ uri: new URL('reliefweb://countries/ZZZ') });
+    await expect(countryResource.handler({ iso3: 'ZZZ' }, ctx)).rejects.toMatchObject({
+      code: JsonRpcErrorCode.NotFound,
+      message: expect.stringMatching(/reliefweb_list_countries text/),
+    });
+  });
+
+  it('describes the uppercase code, curated-link report IDs, and the tool paths for sections and archives', () => {
+    expect(countryResource.description).toContain('uppercase ISO3 code');
+    expect(countryResource.description).toContain('report IDs');
+    expect(countryResource.description).toContain('sections selector');
+    expect(countryResource.description).toContain('archive selector');
+  });
+
   it('strips whitespace from ISO3 before length check', async () => {
     // "  S  " trims to "S" which is 1 char — must reject, not pass 1-char to service
     const ctx = createMockContext({ uri: new URL('reliefweb://countries/%20S%20') });

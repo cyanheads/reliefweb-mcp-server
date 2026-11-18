@@ -3,8 +3,9 @@
  * @module tests/tools/list-countries.tool.test
  */
 
+import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebListCountries } from '@/mcp-server/tools/definitions/list-countries.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -218,5 +219,105 @@ describe('reliefwebListCountries — offset past the end of the result set', () 
     const notice = getEnrichment(ctx).notice as string;
     expect(notice).toContain('crisis_only=false');
     expect(notice).not.toContain('past the end');
+  });
+});
+
+// ─── Issue #43: look up a country by name ────────────────────────────────────
+
+describe('reliefwebListCountries — text lookup', () => {
+  const SYRIA = {
+    id: 226,
+    name: 'Syrian Arab Republic',
+    iso3: 'SYR',
+    status: 'ongoing',
+    urlAlias: 'https://reliefweb.int/country/syr',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends no text and echoes no query when text is absent', async () => {
+    mockListCountries.mockResolvedValue({ items: [SYRIA], totalCount: 248 });
+    const result = await runToolContract(reliefwebListCountries, {});
+    expect(mockListCountries.mock.lastCall?.[0]).not.toHaveProperty('text');
+    expect(result.structuredContent).not.toHaveProperty('effectiveQuery');
+  });
+
+  it('sends the name and echoes it on both surfaces', async () => {
+    mockListCountries.mockResolvedValue({ items: [SYRIA], totalCount: 1 });
+    const result = await runToolContract(reliefwebListCountries, { text: ' Syria ' });
+    expect(mockListCountries.mock.lastCall?.[0]).toMatchObject({ text: 'Syria' });
+    expect(result.structuredContent).toMatchObject({
+      items: [{ iso3: 'SYR' }],
+      effectiveQuery: 'Syria',
+    });
+    expect(JSON.stringify(result.content)).toContain('`Syria`');
+    expect(JSON.stringify(result.content)).toContain('(SYR)');
+  });
+
+  it.each(['', '   '])('treats text %j as omitted', async (text) => {
+    mockListCountries.mockResolvedValue({ items: [SYRIA], totalCount: 248 });
+    const result = await runToolContract(reliefwebListCountries, { text });
+    expect(mockListCountries.mock.lastCall?.[0]).not.toHaveProperty('text');
+    expect(result.structuredContent).not.toHaveProperty('effectiveQuery');
+  });
+
+  it('combines text with crisis_only, limit, and offset', async () => {
+    mockListCountries.mockResolvedValue({ items: [SYRIA], totalCount: 2 });
+    await runToolContract(reliefwebListCountries, {
+      text: 'Congo',
+      crisis_only: true,
+      limit: 1,
+      offset: 1,
+    });
+    expect(mockListCountries.mock.lastCall?.[0]).toEqual({
+      text: 'Congo',
+      crisisOnly: true,
+      limit: 1,
+      offset: 1,
+    });
+  });
+
+  it('says no country name or short name matched, naming each filter, on both surfaces', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
+    const result = await runToolContract(reliefwebListCountries, {
+      text: 'Ivory Coast',
+      crisis_only: true,
+    });
+    for (const text of [JSON.stringify(result.structuredContent), JSON.stringify(result.content)]) {
+      expect(text).toContain('Ivory Coast');
+      expect(text).toContain('crisis_only=true');
+      expect(text).toMatch(/no ReliefWeb country name or short name matched/i);
+    }
+  });
+
+  it('leaves crisis_only out of the no-match notice when the caller did not set it', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 0 });
+    const result = await runToolContract(reliefwebListCountries, { text: 'Ivory Coast' });
+    const { notice } = z.object({ notice: z.string() }).parse(result.structuredContent);
+    expect(notice).toMatch(/no ReliefWeb country name or short name matched text="Ivory Coast"\./i);
+    expect(notice).toContain('one distinctive word of it or list without text');
+    for (const text of [notice, JSON.stringify(result.content)]) {
+      expect(text).not.toContain('crisis_only');
+    }
+  });
+
+  it('keeps the past-the-end notice when a text match is paged beyond', async () => {
+    mockListCountries.mockResolvedValue({ items: [], totalCount: 2 });
+    const result = await runToolContract(reliefwebListCountries, { text: 'Congo', offset: 10 });
+    expect(JSON.stringify(result.structuredContent)).toContain('past the end');
+    expect(JSON.stringify(result.structuredContent)).not.toMatch(/no ReliefWeb country name/i);
+  });
+
+  it('carries the malformed-text recovery on invalid_query', async () => {
+    mockListCountries.mockRejectedValue(
+      new McpError(JsonRpcErrorCode.InvalidParams, 'ReliefWeb returned HTTP 400.', {
+        upstreamMessage: 'Malformed query.',
+      }),
+    );
+    const err = await contractError(reliefwebListCountries, { text: 'Syria (' });
+    expect(err.data).toMatchObject({ reason: 'invalid_query' });
+    expect(err.data?.recovery?.hint).toMatch(/malformed text/i);
   });
 });

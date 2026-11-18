@@ -253,4 +253,21 @@ describe('reliefwebGetTraining', () => {
     expect(text).toContain('255');
     expect(text).toContain(output.outlineNotice);
   });
+
+  it('carries the country ISO3 codes onto both response surfaces', async () => {
+    mockGetTraining.mockResolvedValue({ ...realisticTraining(), countryIso3s: ['KEN'] });
+
+    const result = await runToolContract(reliefwebGetTraining, { id: 4188583 });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      kind: 'full',
+      countries: ['Kenya'],
+      countryIso3s: ['KEN'],
+    });
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Country ISO3 codes:** KEN');
+  });
 });

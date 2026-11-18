@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { countryCodesInput, parseCountryCodes } from '@/mcp-server/tools/country-codes.js';
 import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
 import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
@@ -17,12 +18,15 @@ import {
   resolveDateBound,
 } from '@/services/reliefweb/date-utils.js';
 import { getReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
+import { TRAINING_DEFAULT_SORT } from '@/services/reliefweb/types.js';
 import {
   isRejectedQueryError,
   rejectedQueryMessage,
   upstreamErrorMessage,
 } from '@/services/reliefweb/upstream-errors.js';
 import {
+  CAREER_CATEGORIES,
+  CAREER_CATEGORY_MATCHING,
   resolveVocabulary,
   TRAINING_COSTS,
   unknownValueMessage,
@@ -31,26 +35,14 @@ import {
 export const reliefwebSearchTraining = tool('reliefweb_search_training', {
   title: 'Search ReliefWeb Training',
   description:
-    'Search humanitarian training and learning opportunities on ReliefWeb by country, format, date, source, career category, cost, listing language, and delivery language. ' +
-    'Covers on-site and online capacity-building events. ' +
-    'Training date fields use date.start / date.end — different from report date fields. ' +
-    'Use date_start_from and date_start_to to find upcoming training within a window. ' +
-    'Results default to soonest-starting first (date.start:asc). ' +
-    'With neither date bound supplied the search is scoped to training starting from now, so the first page is upcoming opportunities; ' +
-    'supply either bound to search an explicit range, including a historical one. ' +
-    'Use include_archived=true to search concluded listings as well, which are far more numerous than the current ones.',
+    'Search humanitarian training and learning opportunities on ReliefWeb by country, format, date, source, career category, cost, listing language, and delivery language. Covers on-site and online capacity-building events. Training date fields use date.start / date.end — different from report date fields. With neither date bound supplied, the search covers training starting from now plus listings with no start date (most online courses have none): dated listings come first, soonest-starting first, then undated ones, newest-posted first (date.start:asc, date.created:desc). Supply date_start_from or date_start_to to search an explicit start-date window instead, including a historical one; a window leaves undated listings out. Use include_archived=true to search concluded listings as well, which are far more numerous than the current ones.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
       .optional()
       .describe('Full-text search query. Matches against training title and description.'),
-    country: z
-      .string()
-      .optional()
-      .describe(
-        'ISO 3166-1 alpha-3 country code (e.g., KEN, ETH, COD). Filters to training tagged with this country.',
-      ),
+    country: countryCodesInput('training'),
     source: z.string().optional().describe('Organization short name. Filters on source.shortname.'),
     format: z
       .enum(['on-site', 'online'])
@@ -60,13 +52,13 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       .string()
       .optional()
       .describe(
-        'ReliefWeb career-category name (e.g., Program/Project Management, Information and Communications Technology, Logistics/Procurement). Filters on career_categories.name.',
+        `ReliefWeb career category. One of: ${CAREER_CATEGORIES.join(', ')}. Also accepts the abbreviations ${Object.keys(CAREER_CATEGORY_MATCHING.aliases).join(', ')}, and a word found in only one category name (Logistics resolves to Logistics/Procurement). Separate several categories with commas to require all of them. Case, spacing, and punctuation are ignored; any other value is rejected with the valid list. Matches whole career-category tags.`,
       ),
     language: z
       .string()
       .optional()
       .describe(
-        'Listing language code (ISO 639-1, e.g., en, fr, es). Filters on language.code; use training_language for the course delivery language.',
+        'Listing language code (ISO 639-1, e.g., en, fr, es). Case-insensitive; sent lower-cased, the form ReliefWeb stores. Filters on language.code; use training_language for the course delivery language.',
       ),
     cost: z
       .string()
@@ -78,7 +70,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       .string()
       .optional()
       .describe(
-        'Course delivery language code (ISO 639-1, e.g., en, fr, es). Filters on training_language.code independently of the listing language.',
+        'Course delivery language code (ISO 639-1, e.g., en, fr, es). Case-insensitive; sent lower-cased. Filters on training_language.code independently of the listing language.',
       ),
     date_start_from: z
       .union([
@@ -92,7 +84,7 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ])
       .optional()
       .describe(
-        'Training start date lower bound. Filters on date.start — use to find training starting after a given date. A bare calendar date resolves to start of that day in UTC, and a datetime carrying any offset is resolved to UTC. Omit this and date_start_to together to default the search to training starting from now, unless include_archived is set, which leaves the range open.',
+        'Training start date lower bound. Filters on date.start — use to find training starting after a given date. A bare calendar date resolves to start of that day in UTC, and a datetime carrying any offset is resolved to UTC. A supplied bound leaves listings with no start date out. Omit this and date_start_to together to default the search to training starting from now plus listings with no start date, unless include_archived is set, which leaves the range open.',
       ),
     date_start_to: z
       .union([
@@ -106,19 +98,19 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       ])
       .optional()
       .describe(
-        'Training start date upper bound. Filters on date.start — pair with date_start_from for a window. A bare calendar date resolves to end of that day in UTC, and a datetime carrying any offset is resolved to UTC. Supplying this alone searches everything up to it, with no lower bound injected.',
+        'Training start date upper bound. Filters on date.start — pair with date_start_from for a window. A bare calendar date resolves to end of that day in UTC, and a datetime carrying any offset is resolved to UTC. Supplying this alone searches everything up to it, with no lower bound injected; listings with no start date are left out.',
       ),
     sort: z
       .string()
       .optional()
       .describe(
-        'Sort order. Use date.start:asc for soonest-starting training first (default), date.start:desc for latest-starting, date.created:desc for most recently posted, or score:desc for relevance.',
+        'Sort order. Defaults to date.start:asc then date.created:desc: soonest-starting first, then listings with no start date, newest-posted first. Alternatives: date.start:desc for latest-starting, date.created:desc for most recently posted, or score:desc for relevance; a supplied sort is sent as the only key.',
       ),
     include_archived: z
       .boolean()
       .optional()
       .describe(
-        'Search concluded listings alongside the current ones. Uses preset=analysis. Off by default. Setting this also drops the start-from-now default bound, so an otherwise unbounded search reaches back through the whole record; pair it with date_start_from and date_start_to to study a specific period.',
+        'Search concluded listings alongside the current ones. Uses preset=analysis. Off by default. Setting this also drops the default scope (training starting from now, plus listings with no start date), so an otherwise unbounded search reaches back through the whole record, dated or not; pair it with date_start_from and date_start_to to study a specific period.',
       ),
     limit: limitSchema(SEARCH_MAX_LIMIT)
       .default(10)
@@ -152,6 +144,12 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
               .array(z.string())
               .optional()
               .describe('Countries tagged on this training.'),
+            countryIso3s: z
+              .array(z.string())
+              .optional()
+              .describe(
+                'Uppercase ISO3 codes of the countries tagged on this training — the form the country filters and reliefweb_get_country take.',
+              ),
             themes: z.array(z.string()).optional().describe('Humanitarian theme/sector names.'),
             formats: z.array(z.string()).optional().describe('Training format names.'),
             languages: z
@@ -181,24 +179,45 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
     appliedFilters: z
       .object({
         text: z.string().optional().describe('Full-text query the search used.'),
-        country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
+        country: z
+          .string()
+          .optional()
+          .describe('Country codes as normalized: uppercased ISO3, comma-separated when several.'),
         source: z.string().optional().describe('Source short name filter applied.'),
         format: z.string().optional().describe('Training format name filter applied.'),
-        careerCategory: z.string().optional().describe('Career category name filter applied.'),
-        language: z.string().optional().describe('Listing language code filter applied.'),
+        careerCategory: z
+          .string()
+          .optional()
+          .describe(
+            'Career category names applied, in canonical ReliefWeb spelling and comma-separated when several (listings must carry every one).',
+          ),
+        language: z
+          .string()
+          .optional()
+          .describe('Listing language code filter applied, lower-cased.'),
         cost: z.string().optional().describe('Canonical training cost filter applied.'),
         trainingLanguage: z
           .string()
           .optional()
-          .describe('Course delivery language code filter applied.'),
+          .describe('Course delivery language code filter applied, lower-cased.'),
         dateStartFrom: z
           .string()
           .optional()
           .describe(
-            'Training start date lower bound applied — the caller-supplied value, or the current timestamp when neither date bound was given and include_archived was off.',
+            'Training start date lower bound applied — the caller-supplied value, or the current timestamp when neither date bound was given and include_archived was off. That default scope also includes listings with no start date (undatedIncluded).',
           ),
         dateStartTo: z.string().optional().describe('Training start date upper bound applied.'),
-        sort: z.string().describe('Sort order the query used (resolved, including the default).'),
+        undatedIncluded: z
+          .boolean()
+          .optional()
+          .describe(
+            'True when the default scope applied: listings with no start date are included alongside those starting from dateStartFrom. Absent when a date bound was given or include_archived was set.',
+          ),
+        sort: z
+          .string()
+          .describe(
+            'Sort order the query used (resolved, including the default); comma-separated keys apply in order.',
+          ),
         preset: z
           .string()
           .describe(
@@ -229,6 +248,13 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       code: JsonRpcErrorCode.InvalidParams,
       when: 'The cost value does not name a ReliefWeb training cost category.',
       recovery: 'Use free or fee-based for cost; case, spacing, and punctuation do not matter.',
+    },
+    {
+      reason: 'unknown_career_category',
+      code: JsonRpcErrorCode.InvalidParams,
+      when: 'A career_category value names no single ReliefWeb career category — an unknown name, a word shared by several category names, or words from more than one.',
+      recovery:
+        'Use a career category from the list in the error message, or ICT, M&E, or HR; a single word works only when it appears in one category name, such as Logistics. Separate several categories with commas to require all of them.',
     },
     {
       reason: 'invalid_date',
@@ -268,7 +294,8 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       limit: input.limit,
     });
 
-    const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+    const countryCodes = parseCountryCodes(input.country);
+    const country = countryCodes?.join(',');
     const resolveBound = (field: 'date_start_from' | 'date_start_to', bound: 'from' | 'to') => {
       try {
         return resolveDateBound(input[field], bound);
@@ -283,34 +310,59 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       }
     };
     const dateStartTo = resolveBound('date_start_to', 'to');
+    const explicitStartFrom = resolveBound('date_start_from', 'from');
     /**
      * An unbounded search is asking what is coming up, but date.start:asc opens on the
      * oldest listing in the corpus — every training that already started sorts ahead of
-     * the next one. Scope it to now. A caller who supplied either bound is doing explicit
-     * (possibly historical) research, so their range is left exactly as given — and so is a
-     * caller who asked for the archive, since a start-from-now bound would hide the very
-     * listings include_archived exists to reach.
+     * the next one. Scope it to listings starting from now, plus those with no start date:
+     * most current listings carry none, and a start-date range alone would drop them. A
+     * caller who supplied either bound is doing explicit (possibly historical) research, so
+     * their range is left exactly as given — and so is a caller who asked for the archive,
+     * since a start-from-now bound would hide the very listings include_archived exists to
+     * reach.
      */
-    const dateStartFrom =
-      resolveBound('date_start_from', 'from') ??
-      (dateStartTo === undefined && !input.include_archived ? currentDateBound() : undefined);
+    const upcomingFrom =
+      explicitStartFrom === undefined && dateStartTo === undefined && !input.include_archived
+        ? currentDateBound()
+        : undefined;
+    const dateStartFrom = explicitStartFrom ?? upcomingFrom;
     const cost = resolveVocabulary(input.cost, TRAINING_COSTS);
     if (cost.unmatched.length > 0) {
       throw ctx.fail('unknown_cost', unknownValueMessage('cost', cost.unmatched, TRAINING_COSTS));
     }
+    const careerCategory = resolveVocabulary(
+      input.career_category,
+      CAREER_CATEGORIES,
+      CAREER_CATEGORY_MATCHING,
+    );
+    if (careerCategory.unmatched.length > 0) {
+      throw ctx.fail(
+        'unknown_career_category',
+        unknownValueMessage(
+          'career_category',
+          careerCategory.unmatched,
+          CAREER_CATEGORIES,
+          CAREER_CATEGORY_MATCHING,
+        ),
+      );
+    }
+    // ReliefWeb stores language codes lower-cased, and both fields match case-sensitively.
+    const language = input.language?.trim().toLowerCase() || undefined;
+    const trainingLanguage = input.training_language?.trim().toLowerCase() || undefined;
 
     const appliedFilters = {
       ...(input.text?.trim() ? { text: input.text } : {}),
       ...(country ? { country } : {}),
       ...(input.source?.trim() ? { source: input.source } : {}),
       ...(input.format?.trim() ? { format: input.format } : {}),
-      ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
-      ...(input.language?.trim() ? { language: input.language } : {}),
+      ...(careerCategory.value ? { careerCategory: careerCategory.value } : {}),
+      ...(language ? { language } : {}),
       ...(cost.value ? { cost: cost.value } : {}),
-      ...(input.training_language?.trim() ? { trainingLanguage: input.training_language } : {}),
+      ...(trainingLanguage ? { trainingLanguage } : {}),
       ...(dateStartFrom ? { dateStartFrom } : {}),
       ...(dateStartTo ? { dateStartTo } : {}),
-      sort: input.sort?.trim() || 'date.start:asc',
+      ...(upcomingFrom ? { undatedIncluded: true } : {}),
+      sort: input.sort?.trim() || TRAINING_DEFAULT_SORT.join(','),
       preset: input.include_archived ? 'analysis' : 'latest',
       limit: input.limit,
       offset: input.offset,
@@ -320,15 +372,16 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       .searchTraining(
         {
           ...(input.text?.trim() ? { text: input.text } : {}),
-          ...(country ? { country } : {}),
+          ...(countryCodes ? { country: countryCodes } : {}),
           ...(input.source?.trim() ? { source: input.source } : {}),
           ...(input.format?.trim() ? { format: input.format } : {}),
-          ...(input.career_category?.trim() ? { careerCategory: input.career_category } : {}),
-          ...(input.language?.trim() ? { language: input.language } : {}),
+          ...(careerCategory.value ? { careerCategory: careerCategory.value } : {}),
+          ...(language ? { language } : {}),
           ...(cost.value ? { cost: cost.value } : {}),
-          ...(input.training_language?.trim() ? { trainingLanguage: input.training_language } : {}),
-          ...(dateStartFrom ? { dateStartFrom } : {}),
+          ...(trainingLanguage ? { trainingLanguage } : {}),
+          ...(explicitStartFrom ? { dateStartFrom: explicitStartFrom } : {}),
           ...(dateStartTo ? { dateStartTo } : {}),
+          ...(upcomingFrom ? { upcomingOrUndatedFrom: upcomingFrom } : {}),
           ...(input.sort?.trim() ? { sort: input.sort } : {}),
           ...(input.include_archived != null ? { includeArchived: input.include_archived } : {}),
           limit: input.limit,
@@ -367,17 +420,15 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
       if (country) filters.push(`country=${country}`);
       if (input.source) filters.push(`source="${input.source}"`);
       if (input.format) filters.push(`format="${input.format}"`);
-      if (input.career_category) filters.push(`career_category="${input.career_category}"`);
-      if (input.language) filters.push(`language=${input.language}`);
+      if (careerCategory.value) filters.push(`career_category="${careerCategory.value}"`);
+      if (language) filters.push(`language=${language}`);
       if (cost.value) filters.push(`cost=${cost.value}`);
-      if (input.training_language?.trim())
-        filters.push(`training_language=${input.training_language}`);
-      if (dateStartFrom) filters.push(`start_from=${dateStartFrom}`);
+      if (trainingLanguage) filters.push(`training_language=${trainingLanguage}`);
+      if (explicitStartFrom) filters.push(`start_from=${explicitStartFrom}`);
+      if (upcomingFrom) filters.push(`start_from=${upcomingFrom} or no start date`);
       if (dateStartTo) filters.push(`start_to=${dateStartTo}`);
       notice(
-        `No training matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Try broader keywords, widen or remove the date range, remove the cost or training_language filter, check the format spelling, ' +
-          'or set include_archived=true to search concluded listings as well.',
+        `No training matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. Try broader keywords, widen or remove the date range, remove the cost or training_language filter, or set include_archived=true to search concluded listings as well.`,
       );
     }
 
@@ -395,6 +446,8 @@ export const reliefwebSearchTraining = tool('reliefweb_search_training', {
         lines.push(`**Format:** ${escapeMarkdownInline(item.formats.join(', '))}`);
       if (item.countries?.length)
         lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
+      if (item.countryIso3s?.length)
+        lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(item.countryIso3s.join(', '))}`);
       if (item.careerCategories?.length)
         lines.push(
           `**Career category:** ${escapeMarkdownInline(item.careerCategories.join(', '))}`,
@@ -434,6 +487,7 @@ function renderAppliedFilters(f: {
   trainingLanguage?: string | undefined;
   dateStartFrom?: string | undefined;
   dateStartTo?: string | undefined;
+  undatedIncluded?: boolean | undefined;
   sort: string;
   preset: string;
   limit: number;
@@ -452,6 +506,7 @@ function renderAppliedFilters(f: {
     parts.push(`trainingLanguage=${escapeMarkdownInline(f.trainingLanguage)}`);
   if (f.dateStartFrom != null) parts.push(`dateStartFrom=${f.dateStartFrom}`);
   if (f.dateStartTo != null) parts.push(`dateStartTo=${f.dateStartTo}`);
+  if (f.undatedIncluded != null) parts.push(`undatedIncluded=${f.undatedIncluded}`);
   parts.push(
     `sort=${escapeMarkdownInline(f.sort)}`,
     `preset=${f.preset}`,

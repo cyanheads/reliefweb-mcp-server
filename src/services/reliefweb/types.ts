@@ -40,6 +40,7 @@ export interface RawReportFields {
   body?: string;
   country?: Array<{ name?: string; iso3?: string }>;
   date?: { original?: string; created?: string };
+  disaster?: Array<{ id?: number; name?: string; glide?: string; status?: string }>;
   file?: Array<{ url?: string; filename?: string; mimetype?: string }>;
   format?: Array<{ name?: string }>;
   headline?: { summary?: string };
@@ -161,16 +162,28 @@ export interface RawSourceFields {
 
 // ─── Normalized domain types ──────────────────────────────────────────────────
 
+/** A disaster a report is linked to — enough to call `reliefweb_get_disaster` or filter by it. */
+export interface LinkedDisaster {
+  glide?: string;
+  id: number;
+  name: string;
+}
+
 export interface ReportSummary {
   countries?: string[];
+  /** Uppercase ISO3 codes of `countries`; ReliefWeb sends them lowercase. */
+  countryIso3s?: string[];
   dateCreated?: string;
   dateOriginal?: string;
+  disasters?: LinkedDisaster[];
   fileUrls?: string[];
   formats?: string[];
   headlineSummary?: string;
   id: number;
   languages?: string[];
   primaryCountry?: string;
+  /** Uppercase ISO3 code of `primaryCountry`. */
+  primaryCountryIso3?: string;
   sources?: string[];
   themes?: string[];
   title: string;
@@ -183,12 +196,16 @@ export interface ReportDetail extends ReportSummary {
 
 export interface DisasterSummary {
   countries?: string[];
+  /** Uppercase ISO3 codes of `countries`; ReliefWeb sends them lowercase. */
+  countryIso3s?: string[];
   dateCreated?: string;
   dateEvent?: string;
   glide?: string;
   id: number;
   name: string;
   primaryCountry?: string;
+  /** Uppercase ISO3 code of `primaryCountry`. */
+  primaryCountryIso3?: string;
   primaryType?: string;
   status?: string;
   types?: string[];
@@ -196,15 +213,22 @@ export interface DisasterSummary {
 }
 
 export interface DisasterDetail extends DisasterSummary {
-  appealsResponsePlans?: Array<{ title: string; url: string; date?: string }>;
+  appealsResponsePlans?: DatedCuratedLink[];
   description?: string;
-  keyContent?: Array<{ title: string; url: string }>;
+  keyContent?: CuratedLink[];
   profileOverview?: string;
-  usefulLinks?: Array<{ title: string; url: string }>;
+  /**
+   * Set when ReliefWeb's profile overview is byte-identical to `description`: the text is
+   * carried once, as `description`, and `profileOverview` is omitted. Absent when the overview
+   * differs (it is then kept) or the record has none.
+   */
+  profileOverviewSameAsDescription?: true;
+  usefulLinks?: CuratedLink[];
 }
 
 export interface CountrySummary {
   id: number;
+  /** Uppercase, like every ISO3 code this server returns; ReliefWeb sends it lowercase. */
   iso3?: string;
   name: string;
   status?: string;
@@ -212,10 +236,28 @@ export interface CountrySummary {
 }
 
 export interface CountryDetail extends CountrySummary {
-  appealsResponsePlans?: Array<{ title: string; url: string; date?: string }>;
-  keyContent?: Array<{ title: string; url: string }>;
+  appealsResponsePlans?: DatedCuratedLink[];
+  keyContent?: CuratedLink[];
   profileOverview?: string;
-  usefulLinks?: Array<{ title: string; url: string }>;
+  usefulLinks?: CuratedLink[];
+}
+
+// ─── Curated-profile links ────────────────────────────────────────────────────
+
+/**
+ * One entry of a curated profile list. `reportId` is read from the URL when it is a
+ * ReliefWeb node link, never looked up, so a report removed since the link was curated
+ * still carries one.
+ */
+export interface CuratedLink {
+  reportId?: number;
+  title: string;
+  url: string;
+}
+
+/** A curated entry that may carry a publication date — appeals and response plans do. */
+export interface DatedCuratedLink extends CuratedLink {
+  date?: string;
 }
 
 // ─── Curated-profile archives ─────────────────────────────────────────────────
@@ -230,11 +272,7 @@ export const PROFILE_ARCHIVE_LISTS = ['keyContent', 'appealsResponsePlans', 'use
 export type ProfileArchiveList = (typeof PROFILE_ARCHIVE_LISTS)[number];
 
 /** One archived curated-profile entry. `date` is carried only by appeals and response plans. */
-export interface ProfileArchiveEntry {
-  date?: string;
-  title: string;
-  url: string;
-}
+export type ProfileArchiveEntry = DatedCuratedLink;
 
 /** A country's archived entries for one list, alongside enough identity to attribute them. */
 export type CountryArchive = CountrySummary & { entries: ProfileArchiveEntry[] };
@@ -245,6 +283,8 @@ export type DisasterArchive = DisasterSummary & { entries: ProfileArchiveEntry[]
 export interface JobSummary {
   careerCategories?: string[];
   countries?: string[];
+  /** Uppercase ISO3 codes of `countries`; ReliefWeb sends them lowercase. */
+  countryIso3s?: string[];
   dateClosing?: string;
   dateCreated?: string;
   experienceLevels?: string[];
@@ -268,6 +308,8 @@ export interface TrainingSummary {
   careerCategories?: string[];
   cost?: string;
   countries?: string[];
+  /** Uppercase ISO3 codes of `countries`; ReliefWeb sends them lowercase. */
+  countryIso3s?: string[];
   dateEnd?: string;
   dateRegistration?: string;
   dateStart?: string;
@@ -304,10 +346,30 @@ export interface SourceSummary {
 
 // ─── Query builder types ──────────────────────────────────────────────────────
 
-/** A ReliefWeb API filter condition or compound filter. */
+/** A range condition's bounds, either one optional: full ISO 8601 datetimes for a date field. */
+export interface DateRangeValue {
+  from?: string;
+  to?: string;
+}
+
+/**
+ * A ReliefWeb API filter condition or compound filter. A field condition without `value` tests
+ * whether the field exists; with `negate`, that it is missing.
+ */
 export type FilterCondition =
-  | { field: string; value: string | string[] | number | number[]; operator?: 'AND' | 'OR' }
+  | {
+      field: string;
+      value?: string | string[] | number | number[] | DateRangeValue;
+      operator?: 'AND' | 'OR';
+      negate?: boolean;
+    }
   | { operator: 'AND' | 'OR'; conditions: FilterCondition[]; negate?: boolean };
+
+/**
+ * Training's sort when the caller names none: soonest start first, then — for listings with no
+ * start date, which sort after every dated one — newest posted first.
+ */
+export const TRAINING_DEFAULT_SORT = ['date.start:asc', 'date.created:desc'] as const;
 
 /** POST body for the ReliefWeb search endpoint. */
 export interface ReliefWebQuery {

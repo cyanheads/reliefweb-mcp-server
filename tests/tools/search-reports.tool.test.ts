@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebSearchReports } from '@/mcp-server/tools/definitions/search-reports.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -354,5 +354,55 @@ describe('reliefwebSearchReports — root-level input strictness', () => {
       operator: 'AND',
       conditions: [{ field: 'format.name', value: 'Map' }],
     });
+  });
+});
+
+// ─── Identifiers for the next call ───────────────────────────────────────────
+
+describe('reliefwebSearchReports — linked disasters and ISO3 codes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries them onto structuredContent and content[], and omits them for an unlinked report', async () => {
+    const disasters = [
+      { id: 52467, name: 'Afghanistan: Earthquake - Nov 2025', glide: 'EQ-2025-000202-AFG' },
+      { id: 52001, name: 'Afghanistan: Floods - Jul 2025' },
+    ];
+    mockSearchReports.mockResolvedValue({
+      totalCount: 2,
+      items: [
+        {
+          id: 4186055,
+          title: 'Afghanistan Flash Update',
+          primaryCountry: 'Afghanistan',
+          primaryCountryIso3: 'AFG',
+          countries: ['Afghanistan', 'Pakistan'],
+          countryIso3s: ['AFG', 'PAK'],
+          disasters,
+        },
+        { id: 4186056, title: 'Unlinked report' },
+      ],
+    });
+
+    const result = await runToolContract(reliefwebSearchReports, {});
+
+    expect(result.isError).not.toBe(true);
+    const { items } = result.structuredContent as { items: Array<Record<string, unknown>> };
+    expect(items[0]).toMatchObject({
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG', 'PAK'],
+      disasters,
+    });
+    expect(items[1]).not.toHaveProperty('disasters');
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Primary country ISO3:** AFG');
+    expect(text).toContain('**Country ISO3 codes:** AFG, PAK');
+    expect(text).toContain(
+      '**Disasters:** Afghanistan: Earthquake - Nov 2025 (ID 52467, GLIDE EQ-2025-000202-AFG); Afghanistan: Floods - Jul 2025 (ID 52001)',
+    );
+    expect(text.match(/\*\*Disasters:\*\*/g)).toHaveLength(1);
   });
 });

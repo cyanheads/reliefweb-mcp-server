@@ -1,20 +1,23 @@
 /**
  * @fileoverview End-to-end check that a ReliefWeb failure reaching the client through a
- * `reliefweb_get_*` tool or a `reliefweb://` resource carries no raw upstream response and
- * no request URL in its error `data`. Runs the real service against a mocked fetch.
+ * `reliefweb_get_*` or `reliefweb_search_*` tool or a `reliefweb://` resource carries no raw
+ * upstream response and no request URL in its error `data`, while ReliefWeb's own
+ * explanation still reaches both tool surfaces. Runs the real service against a mocked fetch.
  * @module tests/tools/upstream-error-data.tool.test
  */
 
-import { McpError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import {
   createFetchMock,
   createInMemoryStorage,
   createMockContext,
   type FetchMockHarness,
+  runToolContract,
 } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reportResource } from '@/mcp-server/resources/definitions/report.resource.js';
 import { reliefwebGetReport } from '@/mcp-server/tools/definitions/get-report.tool.js';
+import { reliefwebSearchReports } from '@/mcp-server/tools/definitions/search-reports.tool.js';
 import { initReliefWebService } from '@/services/reliefweb/reliefweb-service.js';
 import { contractError } from '../helpers/contract-error.js';
 
@@ -91,4 +94,74 @@ describe('ReliefWeb 503 on a single-record fetch', () => {
     expect((err as McpError).message).toContain(UPSTREAM_DETAIL);
     expectNoRawResponse((err as McpError).data);
   });
+});
+
+/** ReliefWeb's 400 explanations for a raw filter it cannot apply. */
+const FILTER_FIELD_DETAIL =
+  "Unrecognized filter field 'bogus.key'. Check the entity information for available fields.";
+const DATE_RANGE_DETAIL =
+  "Invalid range 'from' value for field 'date.created'. It must be an ISO 8601 date.";
+
+describe('ReliefWeb 400 on a search query', () => {
+  let http: FetchMockHarness;
+
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', APP_NAME);
+    initReliefWebService({} as never, createInMemoryStorage());
+  });
+
+  afterEach(() => {
+    http.restore();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ['an unknown filter field', { field: 'bogus.key', value: 'x' }, FILTER_FIELD_DETAIL],
+    [
+      'a rejected date range bound',
+      { field: 'date.created', value: { from: 'not-a-date' } },
+      DATE_RANGE_DETAIL,
+    ],
+  ])(
+    'quotes ReliefWeb on both surfaces for %s, with no raw response',
+    async (_label, filter, detail) => {
+      http = createFetchMock([
+        {
+          method: 'POST',
+          match: /^https:\/\/api\.reliefweb\.int\/v2\/reports\?/,
+          respond: new Response(
+            JSON.stringify({
+              status: 400,
+              time: 2,
+              error: { type: 'UnexpectedValueException', message: detail },
+            }),
+            {
+              status: 400,
+              statusText: 'Bad Request',
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+        },
+      ]);
+      http.install();
+
+      const result = await runToolContract(reliefwebSearchReports, { filter });
+
+      expect(result.isError).toBe(true);
+      expect(http.calls).toHaveLength(1);
+      const { error } = result.structuredContent as {
+        error: { code: number; data?: Record<string, unknown>; message: string };
+      };
+      expect(error.code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(error.data?.reason).toBe('invalid_query');
+      expect(error.message).toBe(`ReliefWeb rejected the reports query: ${detail}`);
+      const text = result.content
+        .map((block) => (block.type === 'text' ? block.text : ''))
+        .join('\n');
+      expect(text).toContain(`ReliefWeb rejected the reports query: ${detail}`);
+      expectNoRawResponse(error.data);
+      expect(text).not.toContain('UnexpectedValueException');
+      expect(text).not.toContain(APP_NAME);
+    },
+  );
 });

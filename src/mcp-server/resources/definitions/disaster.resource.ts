@@ -12,9 +12,7 @@ export const disasterResource = resource('reliefweb://disasters/{id}', {
   name: 'reliefweb-disaster',
   title: 'ReliefWeb Disaster',
   description:
-    'Disaster record by ReliefWeb numeric ID — type, status, affected countries, GLIDE number, description, and curated content links. ' +
-    'Always returns the whole record, however large: a resource read has no way to name sections, ' +
-    'so reliefweb_get_disaster is the path for an oversized disaster — it answers with a section outline and takes a sections selector.',
+    'Disaster record by ReliefWeb numeric ID — type, status, affected countries with uppercase ISO3 codes, GLIDE number, description, profile overview, and curated content links with the report IDs their URLs name. A profile overview identical to the description appears once, as description, with profileOverviewSameAsDescription: true in place of profileOverview. Always returns the whole record, however large: a resource read has no way to name sections, so reliefweb_get_disaster is the path for an oversized disaster — it answers with a section outline and takes a sections selector.',
   mimeType: 'application/json',
   params: z.object({
     id: z

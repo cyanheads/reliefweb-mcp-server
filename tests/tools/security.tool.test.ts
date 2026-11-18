@@ -158,6 +158,35 @@ describe('security: date parameters reject injection payloads at the schema', ()
   });
 });
 
+describe('security: country codes reject injection payloads at the schema', () => {
+  // Country inputs carry a code pattern, so an injection payload never reaches the service
+  // or the echoed appliedFilters.
+  const COUNTRY_FIELDS = [
+    ['search_reports.country', reliefwebSearchReports, 'country'],
+    ['search_disasters.country', reliefwebSearchDisasters, 'country'],
+    ['search_jobs.country', reliefwebSearchJobs, 'country'],
+    ['search_training.country', reliefwebSearchTraining, 'country'],
+    ['get_country.iso3', reliefwebGetCountry, 'iso3'],
+  ] as const;
+
+  it.each(COUNTRY_FIELDS)(
+    '%s rejects every injection string as a ZodError',
+    (_label, def, field) => {
+      for (const str of INJECTION_STRINGS) {
+        expect(() => def.input.parse({ [field]: str })).toThrow();
+      }
+    },
+  );
+
+  it.each(COUNTRY_FIELDS)('%s rejects an oversized value', (_label, def, field) => {
+    expect(() => def.input.parse({ [field]: OVERSIZED_INPUT })).toThrow();
+  });
+
+  it.each(COUNTRY_FIELDS)('%s still accepts an ISO3 code', (_label, def, field) => {
+    expect(() => def.input.parse({ [field]: 'syr' })).not.toThrow();
+  });
+});
+
 describe('security: Zod schema rejects out-of-range numeric inputs', () => {
   it('search_reports: limit below minimum (0) throws ZodError', () => {
     expect(() => reliefwebSearchReports.input.parse({ limit: 0 })).toThrow();

@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetReport } from '@/mcp-server/tools/definitions/get-report.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -206,5 +206,36 @@ describe('reliefwebGetReport', () => {
     expect(text).toContain('999');
     expect(text).toContain('No Body');
     expect(text).not.toContain('undefined');
+  });
+
+  it('carries linked disasters and ISO3 codes onto both response surfaces', async () => {
+    const disasters = [
+      { id: 52467, name: 'Afghanistan: Earthquake - Nov 2025', glide: 'EQ-2025-000202-AFG' },
+    ];
+    mockGetReport.mockResolvedValue({
+      id: 4186055,
+      title: 'Afghanistan Flash Update',
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG', 'PAK'],
+      disasters,
+    });
+
+    const result = await runToolContract(reliefwebGetReport, { id: 4186055 });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      kind: 'full',
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG', 'PAK'],
+      disasters,
+    });
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Primary country ISO3:** AFG');
+    expect(text).toContain('**Country ISO3 codes:** AFG, PAK');
+    expect(text).toContain(
+      '**Disasters:** Afghanistan: Earthquake - Nov 2025 (ID 52467, GLIDE EQ-2025-000202-AFG)',
+    );
   });
 });

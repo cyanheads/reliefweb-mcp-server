@@ -60,6 +60,97 @@ describe('archived disaster resource through the real service', () => {
       code: JsonRpcErrorCode.NotFound,
     });
   });
+
+  it('returns uppercase ISO3 codes and curated report IDs on the record', async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetDisaster.mockImplementation(service.getDisaster.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({
+        data: [
+          {
+            id: 52467,
+            fields: {
+              name: 'Afghanistan: Earthquake - Nov 2025',
+              primary_country: { name: 'Afghanistan', iso3: 'afg' },
+              country: [{ name: 'Afghanistan', iso3: 'afg' }],
+              profile: {
+                key_content: {
+                  active: [{ title: 'Flash Update', url: 'https://reliefweb.int/node/4236883' }],
+                },
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    const ctx = createMockContext({ uri: new URL('reliefweb://disasters/52467') });
+
+    expect(await disasterResource.handler({ id: '52467' }, ctx)).toMatchObject({
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG'],
+      keyContent: [
+        { title: 'Flash Update', url: 'https://reliefweb.int/node/4236883', reportId: 4236883 },
+      ],
+    });
+  });
+});
+
+describe('description and profile overview through the real service', () => {
+  const linkTail = '\n### Useful Links\n\n- [Situation map](https://example.org/map)';
+  /** Upstream fields by ID: identical overview, prefix overview, no overview. */
+  const fixtures = new Map<number, Record<string, unknown>>([
+    [401, { name: 'Identical', description: 'Same text.', profile: { overview: 'Same text.' } }],
+    [402, { name: 'Prefix', description: `Text.${linkTail}`, profile: { overview: 'Text.' } }],
+    [403, { name: 'Absent', description: 'Text.' }],
+  ]);
+
+  beforeEach(async () => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    const { ReliefWebService } = await vi.importActual<
+      typeof import('@/services/reliefweb/reliefweb-service.js')
+    >('@/services/reliefweb/reliefweb-service.js');
+    const service = new ReliefWebService({} as never, createInMemoryStorage());
+    mockGetDisaster.mockImplementation(service.getDisaster.bind(service));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (request) => {
+      const id = Number(new URL(String(request)).pathname.split('/').at(-1));
+      const fields = fixtures.get(id);
+      return fields
+        ? Response.json({ data: [{ id, fields }] })
+        : new Response('{}', { status: 404 });
+    });
+  });
+  afterEach(() => {
+    mockGetDisaster.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('carries an identical overview once, flagged, and leaves prefix and absent overviews as stored', async () => {
+    const read = (id: number) =>
+      disasterResource.handler(
+        { id: String(id) },
+        createMockContext({ uri: new URL(`reliefweb://disasters/${id}`) }),
+      );
+
+    expect(await read(402)).toEqual({
+      id: 402,
+      name: 'Prefix',
+      description: `Text.${linkTail}`,
+      profileOverview: 'Text.',
+    });
+    expect(await read(403)).toEqual({ id: 403, name: 'Absent', description: 'Text.' });
+    expect(await read(401)).toEqual({
+      id: 401,
+      name: 'Identical',
+      description: 'Same text.',
+      profileOverviewSameAsDescription: true,
+    });
+  });
 });
 
 describe('disasterResource', () => {

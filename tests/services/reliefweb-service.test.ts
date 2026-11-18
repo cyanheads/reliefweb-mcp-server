@@ -150,7 +150,7 @@ describe('domain request regressions', () => {
       );
       if (contentType === 'countries') {
         expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({
-          filter: { field: 'iso3', value: 'SYR' },
+          filter: { field: 'iso3.exact', value: 'syr' },
           profile: 'full',
           limit: 1,
         });
@@ -374,7 +374,7 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
           fields: {
             id: 10001,
             name: 'Syrian Arab Republic',
-            iso3: 'SYR',
+            iso3: 'syr',
             status: 'current',
             profile: {
               overview: 'Syria crisis overview.',
@@ -417,6 +417,7 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
     const result = await service.getCountry('SYR', ctx);
 
     expect(result).not.toBeNull();
+    expect(result?.iso3).toBe('SYR');
     expect(result?.profileOverview).toBe('Syria crisis overview.');
     // key_content: active only (2) — archive dropped
     expect(result?.keyContent).toEqual([
@@ -455,7 +456,7 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
           fields: {
             id: 10001,
             name: 'Syrian Arab Republic',
-            iso3: 'SYR',
+            iso3: 'syr',
             status: 'current',
             profile: {
               key_content: {
@@ -517,6 +518,42 @@ describe('ReliefWebService.getCountry — profile sub-field normalization', () =
     expect(result?.keyContent).toBeUndefined();
     expect(result?.appealsResponsePlans).toBeUndefined();
     expect(result?.usefulLinks).toBeUndefined();
+  });
+
+  it('drops active entries with no linkable URL or title, and dates only what upstream dates', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse({
+        data: [
+          {
+            id: 999,
+            fields: {
+              name: 'Sparse Country',
+              profile: {
+                key_content: {
+                  active: [
+                    { url: 'https://example.org/ok', title: 'Linkable' },
+                    { url: 'https://example.org/no-title', title: '' },
+                    { url: '', title: 'No URL' },
+                  ],
+                },
+                appeals_response_plans: {
+                  active: [{ url: 'https://example.org/plan', title: 'Undated plan' }],
+                },
+                useful_links: { active: [{ title: 'No URL either' }] },
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await makeService().getCountry('MIN', createMockContext());
+
+    expect(result?.keyContent).toEqual([{ title: 'Linkable', url: 'https://example.org/ok' }]);
+    expect(result?.appealsResponsePlans).toEqual([
+      { title: 'Undated plan', url: 'https://example.org/plan' },
+    ]);
+    expect(result).not.toHaveProperty('usefulLinks');
   });
 });
 
@@ -600,6 +637,78 @@ describe('ReliefWebService.getDisaster — profile sub-field normalization', () 
     expect(JSON.stringify(result?.appealsResponsePlans)).not.toContain('Old Appeal');
     expect(result?.usefulLinks).toHaveLength(1);
     expect(JSON.stringify(result?.usefulLinks)).not.toContain('archived');
+  });
+});
+
+describe('ReliefWebService.getDisaster — description and profile overview', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const linkTail = '\n### Useful Links\n\n- [Situation map](https://example.org/map)';
+
+  it.each([
+    {
+      shape: 'an overview identical to the description is dropped and flagged',
+      description: 'Same text.',
+      overview: 'Same text.',
+      expected: { description: 'Same text.', profileOverviewSameAsDescription: true },
+    },
+    {
+      shape: 'an overview the description extends is kept',
+      description: `Text.${linkTail}`,
+      overview: 'Text.',
+      expected: { description: `Text.${linkTail}`, profileOverview: 'Text.' },
+    },
+    {
+      shape: 'an overview differing only in whitespace is kept',
+      description: 'Text.',
+      overview: 'Text.\n',
+      expected: { description: 'Text.', profileOverview: 'Text.\n' },
+    },
+    {
+      shape: 'a description without an overview carries no flag',
+      description: 'Text.',
+      overview: undefined,
+      expected: { description: 'Text.' },
+    },
+    {
+      shape: 'an overview without a description is kept',
+      description: undefined,
+      overview: 'Text.',
+      expected: { profileOverview: 'Text.' },
+    },
+    {
+      shape: 'a record with neither text carries no flag',
+      description: undefined,
+      overview: undefined,
+      expected: {},
+    },
+  ])('$shape', async ({ description, overview, expected }) => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeOkResponse({
+        data: [
+          {
+            id: 7,
+            fields: {
+              name: 'Disaster',
+              ...(description === undefined ? {} : { description }),
+              ...(overview === undefined ? {} : { profile: { overview } }),
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await makeService().getDisaster(7, createMockContext());
+
+    expect(result).toEqual({ id: 7, name: 'Disaster', ...expected });
   });
 });
 
@@ -720,20 +829,20 @@ describe('ReliefWebService — search request shape', () => {
   it('searchReports filters country on country.iso3 (any tagged country), not primary_country.iso3', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
 
-    await makeService().searchReports({ country: 'SYR' }, createMockContext());
+    await makeService().searchReports({ country: ['SYR'] }, createMockContext());
 
     const filter = lastPostedQuery().filter;
-    expect(filter).toEqual({ field: 'country.iso3', value: 'SYR' });
+    expect(filter).toEqual({ field: 'country.iso3.exact', value: 'syr' });
     expect(JSON.stringify(filter)).not.toContain('primary_country');
   });
 
   it('searchDisasters filters country on country.iso3 (any tagged country), not primary_country.iso3', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
 
-    await makeService().searchDisasters({ country: 'SYR' }, createMockContext());
+    await makeService().searchDisasters({ country: ['SYR'] }, createMockContext());
 
     const filter = lastPostedQuery().filter;
-    expect(filter).toEqual({ field: 'country.iso3', value: 'SYR' });
+    expect(filter).toEqual({ field: 'country.iso3.exact', value: 'syr' });
     expect(JSON.stringify(filter)).not.toContain('primary_country');
   });
 
@@ -758,14 +867,17 @@ describe('ReliefWebService — search request shape', () => {
     expect(JSON.stringify(filter)).not.toContain('current');
   });
 
-  // Issue #12: sort is threaded through searchJobs / searchTraining, with training
-  // defaulting to soonest-starting (date.start:asc) and jobs to newest (date.created:desc).
-  it('searchTraining defaults sort to date.start:asc (soonest-starting)', async () => {
+  /**
+   * Issues #12, #37: sort is threaded through searchJobs / searchTraining, with training
+   * defaulting to soonest-starting, then newest-posted for undated listings
+   * (date.start:asc, date.created:desc), and jobs to newest (date.created:desc).
+   */
+  it('searchTraining defaults sort to soonest-starting, then newest-posted for undated listings', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
 
     await makeService().searchTraining({}, createMockContext());
 
-    expect(lastPostedQuery().sort).toEqual(['date.start:asc']);
+    expect(lastPostedQuery().sort).toEqual(['date.start:asc', 'date.created:desc']);
   });
 
   it('searchTraining threads an explicit sort into the query', async () => {
@@ -829,7 +941,7 @@ describe('ReliefWebService — search request shape', () => {
   it('searchReports always sends preset=latest — reports have no archived class', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(makeOkResponse(emptyPage));
 
-    await makeService().searchReports({ country: 'TUV' }, createMockContext());
+    await makeService().searchReports({ country: ['TUV'] }, createMockContext());
 
     expect(lastPostedQuery().preset).toBe('latest');
   });
@@ -850,6 +962,105 @@ describe('ReliefWebService — search request shape', () => {
 });
 
 // ─── Issue #20: upstream 400 detail survives the service boundary ─────────────
+
+describe('ReliefWebService — theme, career category, and job type filters', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeOkResponse({ data: [], totalCount: 0 }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  /** Every condition of the last posted filter, whether it went alone or inside an AND. */
+  function postedConditions(): unknown[] {
+    const body = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[1]?.body;
+    const filter = JSON.parse(String(body)).filter as { conditions?: unknown[] };
+    return filter.conditions ?? [filter];
+  }
+
+  it('filters one report theme on the whole-tag theme.name.exact field', async () => {
+    await makeService().searchReports({ theme: 'Coordination' }, createMockContext());
+
+    expect(postedConditions()).toEqual([{ field: 'theme.name.exact', value: 'Coordination' }]);
+  });
+
+  it('sends several report themes as an array every report must carry', async () => {
+    await makeService().searchReports({ theme: 'Gender,Mine Action' }, createMockContext());
+
+    expect(postedConditions()).toEqual([
+      { field: 'theme.name.exact', value: ['Gender', 'Mine Action'], operator: 'AND' },
+    ]);
+  });
+
+  it('filters job themes and career categories on their exact fields, several all required', async () => {
+    await makeService().searchJobs(
+      { theme: 'Health,Gender', careerCategory: 'Information Management' },
+      createMockContext(),
+    );
+
+    const conditions = postedConditions();
+    expect(conditions).toHaveLength(2);
+    expect(conditions).toContainEqual({
+      field: 'career_categories.name.exact',
+      value: 'Information Management',
+    });
+    expect(conditions).toContainEqual({
+      field: 'theme.name.exact',
+      value: ['Health', 'Gender'],
+      operator: 'AND',
+    });
+  });
+
+  it('sends several job career categories as an array every posting must carry', async () => {
+    await makeService().searchJobs(
+      { careerCategory: 'Human Resources,Other' },
+      createMockContext(),
+    );
+
+    expect(postedConditions()).toEqual([
+      {
+        field: 'career_categories.name.exact',
+        value: ['Human Resources', 'Other'],
+        operator: 'AND',
+      },
+    ]);
+  });
+
+  it('filters one job type on type.name as a scalar', async () => {
+    await makeService().searchJobs({ jobType: 'Consultancy' }, createMockContext());
+
+    expect(postedConditions()).toEqual([{ field: 'type.name', value: 'Consultancy' }]);
+  });
+
+  it('sends several job types as an OR array — a posting carries one type — archive included', async () => {
+    await makeService().searchJobs(
+      { jobType: 'Consultancy,Internship', includeArchived: true },
+      createMockContext(),
+    );
+
+    expect(postedConditions()).toEqual([
+      { field: 'type.name', value: ['Consultancy', 'Internship'], operator: 'OR' },
+    ]);
+    const body = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[1]?.body;
+    expect(JSON.parse(String(body)).preset).toBe('analysis');
+  });
+
+  it('filters training career categories on the exact field, several all required', async () => {
+    await makeService().searchTraining(
+      { careerCategory: 'Human Resources,Other' },
+      createMockContext(),
+    );
+
+    expect(postedConditions()).toContainEqual({
+      field: 'career_categories.name.exact',
+      value: ['Human Resources', 'Other'],
+      operator: 'AND',
+    });
+  });
+});
 
 describe('ReliefWebService — upstream error classification', () => {
   beforeEach(() => {
@@ -916,7 +1127,7 @@ describe('ReliefWebService — upstream error classification', () => {
    * service's own data payload nor `httpErrorFromResponse` may put it there.
    */
   it.each([
-    ['POST', (s: ReliefWebService) => s.searchReports({ country: 'SYR' }, createMockContext())],
+    ['POST', (s: ReliefWebService) => s.searchReports({ country: ['SYR'] }, createMockContext())],
     ['GET', (s: ReliefWebService) => s.getReport(1, createMockContext())],
   ])('the %s error path keeps the request URL and its appname off error.data', async (_, call) => {
     vi.stubEnv('RELIEFWEB_APP_NAME', 'secret-operator-appname');
@@ -1166,7 +1377,7 @@ describe('ReliefWebService.getCountryArchive / getDisasterArchive — archived h
           fields: {
             id: 10001,
             name: 'Syrian Arab Republic',
-            iso3: 'SYR',
+            iso3: 'syr',
             status: 'current',
             url_alias: 'https://reliefweb.int/country/syr',
             profile,
@@ -1290,5 +1501,472 @@ describe('ReliefWebService.getCountryArchive / getDisasterArchive — archived h
     await expect(
       makeService().getDisasterArchive(9999999, 'keyContent', createMockContext()),
     ).resolves.toBeNull();
+  });
+});
+
+// ─── Issue #41: identifiers a record hands to the next call ──────────────────
+
+describe('ReliefWebService — identifiers that link a record to the next call', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  /** Records in the envelope the search and item endpoints share. */
+  function page(...records: Array<{ id: number } & Record<string, unknown>>): Response {
+    return makeOkResponse({
+      count: records.length,
+      totalCount: records.length,
+      data: records.map((fields) => ({ id: fields.id, fields })),
+    });
+  }
+
+  /** The field selection the most recent POST asked ReliefWeb for. */
+  function requestedFields(): string[] {
+    const init = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[1] as RequestInit | undefined;
+    return (JSON.parse(String(init?.body)) as { fields: { include: string[] } }).fields.include;
+  }
+
+  /** As ReliefWeb sends them: lowercase ISO3 codes, and disaster entries carrying a status. */
+  const upstreamCountries = {
+    primary_country: { name: 'Afghanistan', iso3: 'afg' },
+    country: [
+      { name: 'Afghanistan', iso3: 'afg' },
+      { name: 'Pakistan', iso3: 'pak' },
+    ],
+  };
+  const upstreamDisasters = [
+    {
+      id: 52467,
+      name: 'Afghanistan: Earthquake - Nov 2025',
+      glide: 'EQ-2025-000202-AFG',
+      status: 'ongoing',
+    },
+    { id: 52001, name: 'Afghanistan: Floods - Jul 2025', status: 'past' },
+  ];
+  const linkedDisasters = [
+    { id: 52467, name: 'Afghanistan: Earthquake - Nov 2025', glide: 'EQ-2025-000202-AFG' },
+    { id: 52001, name: 'Afghanistan: Floods - Jul 2025' },
+  ];
+
+  it('selects ISO3 codes and linked disasters on report search and returns them normalized', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({
+        id: 4186055,
+        title: 'Flash Update',
+        ...upstreamCountries,
+        disaster: upstreamDisasters,
+      }),
+    );
+
+    const { items } = await makeService().searchReports({}, createMockContext());
+
+    expect(requestedFields()).toEqual(
+      expect.arrayContaining([
+        'primary_country.iso3',
+        'country.iso3',
+        'disaster.id',
+        'disaster.name',
+        'disaster.glide',
+      ]),
+    );
+    expect(items[0]).toMatchObject({
+      primaryCountry: 'Afghanistan',
+      primaryCountryIso3: 'AFG',
+      countries: ['Afghanistan', 'Pakistan'],
+      countryIso3s: ['AFG', 'PAK'],
+    });
+    expect(items[0]?.disasters).toEqual(linkedDisasters);
+  });
+
+  it('returns the same identifiers on the full report record', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({
+        id: 4186055,
+        title: 'Flash Update',
+        body: 'Body.',
+        ...upstreamCountries,
+        disaster: upstreamDisasters,
+      }),
+    );
+
+    const report = await makeService().getReport(4186055, createMockContext());
+
+    expect(report).toMatchObject({
+      body: 'Body.',
+      primaryCountryIso3: 'AFG',
+      countryIso3s: ['AFG', 'PAK'],
+    });
+    expect(report?.disasters).toEqual(linkedDisasters);
+  });
+
+  it('omits each identifier upstream does not carry instead of inventing one', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page(
+        { id: 1, title: 'No links at all' },
+        {
+          id: 2,
+          title: 'Names without codes',
+          primary_country: { name: 'Afghanistan' },
+          country: [{ name: 'Afghanistan' }],
+          disaster: [{ name: 'Disaster with no ID' }, { id: 7 }],
+        },
+      ),
+    );
+
+    const { items } = await makeService().searchReports({}, createMockContext());
+
+    expect(items[1]).toMatchObject({ primaryCountry: 'Afghanistan', countries: ['Afghanistan'] });
+    for (const item of items) {
+      expect(item).not.toHaveProperty('primaryCountryIso3');
+      expect(item).not.toHaveProperty('countryIso3s');
+      expect(item).not.toHaveProperty('disasters');
+    }
+  });
+
+  it('selects ISO3 codes on disaster search and returns them uppercased beside the names', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({ id: 52467, name: 'Afghanistan: Earthquake - Nov 2025', ...upstreamCountries }),
+    );
+
+    const { items } = await makeService().searchDisasters({}, createMockContext());
+
+    expect(requestedFields()).toEqual(
+      expect.arrayContaining(['primary_country.iso3', 'country.iso3']),
+    );
+    expect(items[0]).toMatchObject({
+      primaryCountry: 'Afghanistan',
+      primaryCountryIso3: 'AFG',
+      countries: ['Afghanistan', 'Pakistan'],
+      countryIso3s: ['AFG', 'PAK'],
+    });
+  });
+
+  it('carries ISO3 codes and curated report IDs on the full disaster record', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({
+        id: 52467,
+        name: 'Afghanistan: Earthquake - Nov 2025',
+        ...upstreamCountries,
+        profile: {
+          key_content: {
+            active: [{ title: 'Flash Update', url: 'https://reliefweb.int/node/4236883' }],
+          },
+          useful_links: {
+            active: [{ title: 'Partner page', url: 'https://example.org/response' }],
+          },
+        },
+      }),
+    );
+
+    const disaster = await makeService().getDisaster(52467, createMockContext());
+
+    expect(disaster).toMatchObject({ primaryCountryIso3: 'AFG', countryIso3s: ['AFG', 'PAK'] });
+    expect(disaster?.keyContent).toEqual([
+      { title: 'Flash Update', url: 'https://reliefweb.int/node/4236883', reportId: 4236883 },
+    ]);
+    expect(disaster?.usefulLinks).toEqual([
+      { title: 'Partner page', url: 'https://example.org/response' },
+    ]);
+  });
+
+  it('carries ISO3 codes on a disaster archive page identity and report IDs on its entries', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({
+        id: 52467,
+        name: 'Afghanistan: Earthquake - Nov 2025',
+        ...upstreamCountries,
+        profile: {
+          appeals_response_plans: {
+            archive: [
+              {
+                title: 'Flash Appeal',
+                url: 'https://reliefweb.int/node/2611439/edit',
+                date: '2025-11-20',
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const archive = await makeService().getDisasterArchive(
+      52467,
+      'appealsResponsePlans',
+      createMockContext(),
+    );
+
+    expect(archive).toMatchObject({ primaryCountryIso3: 'AFG', countryIso3s: ['AFG', 'PAK'] });
+    expect(archive?.entries).toEqual([
+      {
+        title: 'Flash Appeal',
+        url: 'https://reliefweb.int/node/2611439/edit',
+        date: '2025-11-20',
+        reportId: 2611439,
+      },
+    ]);
+  });
+
+  it('lists countries with the ISO3 code uppercased — ReliefWeb sends it lowercase', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({ id: 13, name: 'Afghanistan', iso3: 'afg' }, { id: 14, name: 'Unlisted territory' }),
+    );
+
+    const { items } = await makeService().listCountries({}, createMockContext());
+
+    expect(items[0]?.iso3).toBe('AFG');
+    expect(items[1]).not.toHaveProperty('iso3');
+  });
+
+  it('carries report IDs on every active curated list of a country profile', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({
+        id: 13,
+        name: 'Afghanistan',
+        iso3: 'afg',
+        profile: {
+          key_content: {
+            active: [{ title: 'Key update', url: 'https://reliefweb.int/node/4236883' }],
+          },
+          appeals_response_plans: {
+            active: [
+              {
+                title: 'HRP 2025',
+                url: 'https://reliefweb.int/node/2611439/edit',
+                date: '2025-01-15',
+              },
+            ],
+          },
+          useful_links: {
+            active: [
+              { title: 'Node link', url: 'https://reliefweb.int/node/4100001' },
+              { title: 'External', url: 'https://example.org/afghanistan' },
+            ],
+          },
+        },
+      }),
+    );
+
+    const country = await makeService().getCountry('AFG', createMockContext());
+
+    expect(country?.keyContent).toEqual([
+      { title: 'Key update', url: 'https://reliefweb.int/node/4236883', reportId: 4236883 },
+    ]);
+    expect(country?.appealsResponsePlans).toEqual([
+      {
+        title: 'HRP 2025',
+        url: 'https://reliefweb.int/node/2611439/edit',
+        date: '2025-01-15',
+        reportId: 2611439,
+      },
+    ]);
+    expect(country?.usefulLinks).toEqual([
+      { title: 'Node link', url: 'https://reliefweb.int/node/4100001', reportId: 4100001 },
+      { title: 'External', url: 'https://example.org/afghanistan' },
+    ]);
+  });
+
+  /** Each URL shape a curated list carries, and the report ID it yields. */
+  const urlForms: Array<[url: string, reportId: number | undefined]> = [
+    ['https://reliefweb.int/node/4236883', 4236883],
+    ['https://reliefweb.int/node/2611439/edit', 2611439],
+    ['https://fts.unocha.org/countries/3/summary/2026', undefined],
+    ['https://reliefweb.int/report/haiti/saison-cyclonique-2013', undefined],
+    ['https://reliefweb.int/organization/institut-pasteur-de-madagascar', undefined],
+    ['https://reliefweb.int/updates?advanced-search=%28D52586%29', undefined],
+    ['http://reliefweb.int/node/4236883', undefined],
+    ['https://www.reliefweb.int/node/4236883', undefined],
+    ['https://reliefweb.int/node/4236883/', undefined],
+    ['https://reliefweb.int/node/4236883?ref=key', undefined],
+    ['https://reliefweb.int/node/4236883/edit/extra', undefined],
+    ['https://reliefweb.int/node/0', undefined],
+    ['https://reliefweb.int/node/12a', undefined],
+    ['https://reliefweb.int/node/99999999999999999999', undefined],
+    ['https://example.org/go?to=https://reliefweb.int/node/4236883', undefined],
+  ];
+
+  it('reads a report ID from a ReliefWeb node link, with or without /edit, and from no other URL', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      page({
+        id: 13,
+        name: 'Afghanistan',
+        iso3: 'afg',
+        profile: {
+          key_content: {
+            archive: urlForms.map(([url], i) => ({ title: `Entry ${i}`, url })),
+          },
+        },
+      }),
+    );
+
+    const archive = await makeService().getCountryArchive('AFG', 'keyContent', createMockContext());
+
+    expect(archive?.entries.map((entry) => [entry.url, entry.reportId])).toEqual(urlForms);
+    for (const entry of archive?.entries ?? []) {
+      if (entry.reportId === undefined) expect(entry).not.toHaveProperty('reportId');
+    }
+  });
+
+  /** Job and training records tag countries but name no primary one. */
+  const upstreamTaggedCountries = { country: upstreamCountries.country };
+
+  it.each(['searchJobs', 'searchTraining'] as const)(
+    '%s selects country ISO3 codes and returns them uppercased beside the names',
+    async (method) => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        page({ id: 4221508, title: 'Program Manager', ...upstreamTaggedCountries }),
+      );
+
+      const { items } = await makeService()[method]({}, createMockContext());
+
+      expect(requestedFields()).toEqual(expect.arrayContaining(['country.name', 'country.iso3']));
+      expect(items[0]).toMatchObject({
+        countries: ['Afghanistan', 'Pakistan'],
+        countryIso3s: ['AFG', 'PAK'],
+      });
+    },
+  );
+
+  it.each(['getJob', 'getTraining'] as const)(
+    '%s carries the country ISO3 codes on the full record',
+    async (method) => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        page({ id: 4221508, title: 'Program Manager', body: 'Body.', ...upstreamTaggedCountries }),
+      );
+
+      const record = await makeService()[method](4221508, createMockContext());
+
+      expect(record).toMatchObject({
+        body: 'Body.',
+        countries: ['Afghanistan', 'Pakistan'],
+        countryIso3s: ['AFG', 'PAK'],
+      });
+    },
+  );
+
+  it.each(['searchJobs', 'searchTraining'] as const)(
+    '%s omits the ISO3 codes when no tagged country carries one',
+    async (method) => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        page(
+          { id: 1, title: 'Online course, no country' },
+          { id: 2, title: 'Names without codes', country: [{ name: 'Kenya' }] },
+        ),
+      );
+
+      const { items } = await makeService()[method]({}, createMockContext());
+
+      expect(items[1]).toMatchObject({ countries: ['Kenya'] });
+      for (const item of items) expect(item).not.toHaveProperty('countryIso3s');
+    },
+  );
+});
+
+// ─── Issues #37, #39, #43: country filters, country lookup, training default scope ───
+
+describe('ReliefWebService — country filters, country lookup, and training scope', () => {
+  beforeEach(() => {
+    vi.stubEnv('RELIEFWEB_APP_NAME', 'test-app');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      makeOkResponse({ count: 0, data: [], totalCount: 0, status: 200, time: 1, self: 'x' }),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  /** The JSON body of the most recent POST to ReliefWeb. */
+  function posted(): Record<string, unknown> & { filter?: unknown; sort?: string[] } {
+    return JSON.parse(String(vi.mocked(fetch).mock.lastCall?.[1]?.body));
+  }
+
+  type CountrySearch = (s: ReliefWebService, country: string[]) => Promise<unknown>;
+  const SEARCHES: [string, CountrySearch][] = [
+    ['searchReports', (s, country) => s.searchReports({ country }, createMockContext())],
+    ['searchDisasters', (s, country) => s.searchDisasters({ country }, createMockContext())],
+    ['searchJobs', (s, country) => s.searchJobs({ country }, createMockContext())],
+    ['searchTraining', (s, country) => s.searchTraining({ country }, createMockContext())],
+  ];
+
+  it.each(SEARCHES)(
+    '%s sends one country code as a scalar country.iso3.exact condition, lower-cased',
+    async (_name, search) => {
+      await search(makeService(), ['SYR']);
+      expect(posted().filter).toEqual({ field: 'country.iso3.exact', value: 'syr' });
+    },
+  );
+
+  it.each(SEARCHES)('%s requires every listed country with operator AND', async (_name, search) => {
+    await search(makeService(), ['SYR', 'AFG']);
+    expect(posted().filter).toEqual({
+      field: 'country.iso3.exact',
+      value: ['syr', 'afg'],
+      operator: 'AND',
+    });
+  });
+
+  it.each(SEARCHES)(
+    '%s reaches codes that are English stopwords (ARE, AND) through the exact field',
+    async (_name, search) => {
+      await search(makeService(), ['ARE', 'AND']);
+      expect(posted().filter).toEqual({
+        field: 'country.iso3.exact',
+        value: ['are', 'and'],
+        operator: 'AND',
+      });
+    },
+  );
+
+  it('searchTraining sends an explicit start bound as a plain date.start range', async () => {
+    await makeService().searchTraining(
+      { dateStartFrom: '2026-01-01T00:00:00+00:00' },
+      createMockContext(),
+    );
+    expect(posted().filter).toEqual({
+      field: 'date.start',
+      value: { from: '2026-01-01T00:00:00+00:00' },
+    });
+  });
+
+  it('listCountries sends no full-text query when no text is given', async () => {
+    await makeService().listCountries(
+      { crisisOnly: true, limit: 5, offset: 10 },
+      createMockContext(),
+    );
+    expect(posted()).not.toHaveProperty('query');
+    expect(posted()).toMatchObject({ sort: ['name:asc'], limit: 5, offset: 10 });
+  });
+
+  it('listCountries matches text against name and short name, every word required', async () => {
+    await makeService().listCountries(
+      { text: 'South Sudan', crisisOnly: true },
+      createMockContext(),
+    );
+    expect(posted()).toMatchObject({
+      query: { value: 'South Sudan', operator: 'AND', fields: ['name', 'shortname'] },
+      filter: { field: 'status', value: ['ongoing'], operator: 'OR' },
+      sort: ['name:asc'],
+    });
+  });
+
+  it('searchTraining ORs the missing start date into the default scope', async () => {
+    await makeService().searchTraining(
+      { upcomingOrUndatedFrom: '2026-11-18T03:55:04+00:00' },
+      createMockContext(),
+    );
+    expect(posted().filter).toEqual({
+      operator: 'OR',
+      conditions: [
+        { field: 'date.start', value: { from: '2026-11-18T03:55:04+00:00' } },
+        { field: 'date.start', negate: true },
+      ],
+    });
   });
 });

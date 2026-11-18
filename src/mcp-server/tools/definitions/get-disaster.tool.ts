@@ -23,6 +23,7 @@ import {
   ARCHIVE_PAGE,
   archiveInput,
   archivePage,
+  CURATED_REPORT_ID,
   curatedLinkLines,
   PROFILE_KIND,
   renderArchive,
@@ -49,18 +50,38 @@ const DisasterFields = z.object({
   dateEvent: z.string().describe('Event date (ISO 8601), when available.'),
   dateCreated: z.string().describe('ReliefWeb index date (ISO 8601).'),
   primaryCountry: z.string().describe('Primary affected country.'),
+  primaryCountryIso3: z
+    .string()
+    .describe(
+      'Uppercase ISO3 code of the primary affected country — the form the country filters and reliefweb_get_country take.',
+    ),
   countries: z.array(z.string()).describe('All countries tagged on this disaster.'),
+  countryIso3s: z
+    .array(z.string())
+    .describe(
+      'Uppercase ISO3 codes of the countries tagged on this disaster — the form the country filters and reliefweb_get_country take.',
+    ),
   types: z.array(z.string()).describe('Disaster type names.'),
   primaryType: z.string().describe('Primary disaster type.'),
   urlAlias: z.string().describe('Canonical ReliefWeb URL for this disaster.'),
   description: z.string().describe('Full disaster description text.'),
-  profileOverview: z.string().describe('Profile overview text from the ReliefWeb editorial team.'),
+  profileOverview: z
+    .string()
+    .describe(
+      'Profile overview text from the ReliefWeb editorial team. Omitted when identical to description — profileOverviewSameAsDescription is then true.',
+    ),
+  profileOverviewSameAsDescription: z
+    .literal(true)
+    .describe(
+      'Present and true when the profile overview is identical to description: the text is returned once, as description, and profileOverview is omitted. Absent when the overview differs or the record has none.',
+    ),
   keyContent: z
     .array(
       z
         .object({
           title: z.string().describe('Link title.'),
           url: z.string().describe('Link URL.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('A curated key content link.'),
     )
@@ -74,6 +95,7 @@ const DisasterFields = z.object({
           title: z.string().describe('Appeal or response plan title.'),
           url: z.string().describe('Link URL.'),
           date: z.string().optional().describe('Publication date.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('An appeal or response plan entry.'),
     )
@@ -86,6 +108,7 @@ const DisasterFields = z.object({
         .object({
           title: z.string().describe('Link title.'),
           url: z.string().describe('Link URL.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('A useful external link.'),
     )
@@ -105,13 +128,7 @@ const DisasterOutput = z.object({
 export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
   title: 'Get ReliefWeb Disaster',
   description:
-    'Fetch a disaster record by ReliefWeb numeric ID including description, affected countries, GLIDE number, ' +
-    'profile overview, key content links, and active appeals or response plans. ' +
-    'Use after reliefweb_search_disasters to retrieve full details. ' +
-    'Each curated list also has an archive, which the record leaves out. ' +
-    "Two alternative selectors, at most one per call: sections names parts of the record to return, archive pages one list's archived entries in place of the record. " +
-    'Description and profile overview can together run to tens of KB for major disasters. A record over the response budget ' +
-    'comes back as a section outline naming every section and its byte size. Nothing is truncated on any path.',
+    "Fetch a disaster record by ReliefWeb numeric ID including description, affected countries, GLIDE number, profile overview, key content links, and active appeals or response plans. Use after reliefweb_search_disasters to retrieve full details. Each curated list also has an archive, which the record leaves out. Two alternative selectors, at most one per call: sections names parts of the record to return, archive pages one list's archived entries in place of the record. A profile overview identical to the description is returned once, as description, with profileOverviewSameAsDescription: true in place of profileOverview; naming profileOverview in sections still returns it as stored. Either text can run to tens of KB for major disasters. A record over the response budget comes back as a section outline naming every section and its byte size. Nothing is truncated on any path.",
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     id: z
@@ -187,7 +204,17 @@ export const reliefwebGetDisaster = tool('reliefweb_get_disaster', {
         `No disaster found with ID ${input.id}. Verify the ID from reliefweb_search_disasters.`,
       );
     }
-    return documentOrOutline(disaster, input.sections, DISASTER_IDENTITY);
+    /**
+     * The service drops an overview identical to description and flags it, and the budget
+     * check runs on that record. A selection reads the overview as stored, so restore it
+     * first: selection rejects a name the record lacks. The flag stays, so every name an
+     * outline listed still resolves.
+     */
+    const record =
+      input.sections?.length && disaster.profileOverviewSameAsDescription && disaster.description
+        ? { ...disaster, profileOverview: disaster.description }
+        : disaster;
+    return documentOrOutline(record, input.sections, DISASTER_IDENTITY);
   },
 
   format: (result) => [
@@ -216,11 +243,17 @@ function renderDisaster(result: z.infer<typeof DisasterOutput>) {
   if (result.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(result.dateCreated)}`);
   if (result.primaryCountry)
     lines.push(`**Primary country:** ${escapeMarkdownInline(result.primaryCountry)}`);
+  if (result.primaryCountryIso3)
+    lines.push(`**Primary country ISO3:** ${escapeMarkdownInline(result.primaryCountryIso3)}`);
   if (result.countries?.length)
     lines.push(`**Countries:** ${escapeMarkdownInline(result.countries.join(', '))}`);
+  if (result.countryIso3s?.length)
+    lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(result.countryIso3s.join(', '))}`);
   if (result.urlAlias) lines.push(`**URL:** ${markdownLink(result.urlAlias, result.urlAlias)}`);
   if (result.description) lines.push(`\n## Description\n\n${result.description}`);
   if (result.profileOverview) lines.push(`\n## Overview\n\n${result.profileOverview}`);
+  if (result.profileOverviewSameAsDescription)
+    lines.push('\n**Profile overview:** same as description');
   lines.push(...curatedLinkLines(result));
   return [{ type: 'text' as const, text: lines.join('\n') }];
 }

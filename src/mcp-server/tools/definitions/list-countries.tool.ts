@@ -19,11 +19,15 @@ import {
 export const reliefwebListCountries = tool('reliefweb_list_countries', {
   title: 'List ReliefWeb Countries',
   description:
-    'List all countries and territories tracked by ReliefWeb, optionally filtered to active humanitarian situations. ' +
-    'Returns ISO3 codes and status for each entry — use the ISO3 code with reliefweb_get_country to fetch a full profile. ' +
-    'Set crisis_only=true to limit results to countries with active humanitarian situations.',
+    'List the countries and territories tracked by ReliefWeb, with the ISO3 code and humanitarian status of each. Set text to look a country up by name (text: "Syria" returns SYR) instead of reading the full listing, and crisis_only=true to keep countries with an active humanitarian situation. Use the ISO3 code with reliefweb_get_country and in the country filter of the search tools.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
+    text: z
+      .string()
+      .optional()
+      .describe(
+        'Country name to look up. Matches whole words of the ReliefWeb country name and short name (Syria, DR Congo), ignoring case and accents; every word must match, so a partial word or an exonym finds nothing (Syr, Ivory Coast). When it misses, list without text and read the full listing. Blank is omitted.',
+      ),
     crisis_only: z
       .boolean()
       .optional()
@@ -54,7 +58,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
             iso3: z
               .string()
               .optional()
-              .describe('ISO 3166-1 alpha-3 code for use with reliefweb_get_country.'),
+              .describe('ISO 3166-1 alpha-3 code, uppercase, for use with reliefweb_get_country.'),
             status: z
               .string()
               .optional()
@@ -73,6 +77,10 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
   enrichmentTrailer: { notice: { render: renderPlainTextNotice } },
   enrichment: {
     totalCount: z.number().describe('Total countries matching the filter before pagination.'),
+    effectiveQuery: z
+      .string()
+      .optional()
+      .describe('The text lookup the query ran, trimmed. Absent when no text was given.'),
     notice: z
       .string()
       .optional()
@@ -86,7 +94,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       code: JsonRpcErrorCode.InvalidParams,
       when: 'ReliefWeb rejected the request as malformed rather than failing to serve it.',
       recovery:
-        'Correct the value named in the error message and call again; an unchanged retry is rejected identically.',
+        'Correct the value named in the error message and call again; an unchanged retry is rejected identically. Malformed text is another possible cause: use plain keywords, balanced parentheses, and complete boolean expressions in text.',
     },
     {
       reason: 'upstream_error',
@@ -105,13 +113,16 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       ctx,
     );
     const input = { ...requestedInput, limit };
+    const text = input.text?.trim();
     ctx.log.info('reliefweb_list_countries', {
+      text,
       crisisOnly: input.crisis_only,
       limit: input.limit,
     });
     const result = await getReliefWebService()
       .listCountries(
         {
+          ...(text ? { text } : {}),
           ...(input.crisis_only != null ? { crisisOnly: input.crisis_only } : {}),
           limit: input.limit,
           offset: input.offset,
@@ -133,6 +144,7 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
       });
 
     ctx.enrich.total(result.totalCount);
+    if (text) ctx.enrich.echo(text);
 
     if (result.items.length === 0 && result.totalCount > 0) {
       notice(
@@ -142,6 +154,12 @@ export const reliefwebListCountries = tool('reliefweb_list_countries', {
           totalCount: result.totalCount,
           limit: input.limit,
         }),
+      );
+    } else if (result.items.length === 0 && text) {
+      const scope = input.crisis_only ? ' among countries with crisis_only=true' : '';
+      const widen = input.crisis_only ? ', set crisis_only=false,' : '';
+      notice(
+        `No ReliefWeb country name or short name matched text="${text}"${scope}. Text matches whole words and needs every one, so try the official name or one distinctive word of it${widen} or list without text and read the full listing.`,
       );
     } else if (result.items.length === 0) {
       notice(

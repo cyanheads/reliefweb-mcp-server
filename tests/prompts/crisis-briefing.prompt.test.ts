@@ -15,9 +15,11 @@ describe('reliefwebCrisisBriefing', () => {
         focus,
       });
       const text = (messages[0]!.content as { type: string; text: string }).text;
-      const resolution = text.indexOf('reliefweb_list_countries({limit:1000})');
-      expect(resolution).toBeGreaterThan(-1);
-      expect(resolution).toBeLessThan(text.indexOf('country=<ISO3>'));
+      const lookup = text.indexOf('reliefweb_list_countries({text:"<country name>"})');
+      const fallback = text.indexOf('reliefweb_list_countries({limit:1000})');
+      expect(lookup).toBeGreaterThan(-1);
+      expect(fallback).toBeGreaterThan(lookup);
+      expect(fallback).toBeLessThan(text.indexOf('country=<ISO3>'));
       expect(text).toContain('totalCount');
       expect(text).toContain('ISO3 input can be used directly');
       expect(text).not.toContain('country="Kenya"');
@@ -171,6 +173,20 @@ describe('reliefwebCrisisBriefing', () => {
     expect(text).toContain('reliefweb_get_disaster');
     expect(text).toContain('reliefweb_search_reports');
   });
+
+  it.each(['jobs', 'full'] as const)(
+    'keeps undated training listings and marks them undated for %s',
+    async (focus) => {
+      const messages = await reliefwebCrisisBriefing.generate({
+        country_or_disaster: 'SDN',
+        focus,
+      });
+
+      const text = (messages[0]!.content as { type: string; text: string }).text;
+      expect(text).toContain('also returns listings with no start date');
+      expect(text).toContain('mark those as undated rather than leaving them out');
+    },
+  );
 
   it('references job search tool in the jobs section', async () => {
     const messages = await reliefwebCrisisBriefing.generate({

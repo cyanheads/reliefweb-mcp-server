@@ -4,7 +4,7 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { reliefwebGetJob } from '@/mcp-server/tools/definitions/get-job.tool.js';
 import { contractError } from '../helpers/contract-error.js';
@@ -176,5 +176,22 @@ describe('reliefwebGetJob', () => {
     expect(text).toContain('howToApply');
     expect(text).toContain('311');
     expect(text).toContain(output.outlineNotice);
+  });
+
+  it('carries the country ISO3 codes onto both response surfaces', async () => {
+    mockGetJob.mockResolvedValue({ ...realisticJob(), countryIso3s: ['KEN'] });
+
+    const result = await runToolContract(reliefwebGetJob, { id: 4221508 });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      kind: 'full',
+      countries: ['Kenya'],
+      countryIso3s: ['KEN'],
+    });
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Country ISO3 codes:** KEN');
   });
 });

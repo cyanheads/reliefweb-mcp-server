@@ -8,6 +8,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { iso3Input } from '@/mcp-server/tools/country-codes.js';
 import {
   documentOrOutline,
   OUTLINE_NOTICE,
@@ -22,6 +23,7 @@ import {
   ARCHIVE_PAGE,
   archiveInput,
   archivePage,
+  CURATED_REPORT_ID,
   curatedLinkLines,
   PROFILE_KIND,
   renderArchive,
@@ -44,7 +46,7 @@ const SECTIONS_VS_ARCHIVE =
 const CountryFields = z.object({
   id: z.number().describe('ReliefWeb numeric country ID.'),
   name: z.string().describe('Country name.'),
-  iso3: z.string().describe('ISO 3166-1 alpha-3 code.'),
+  iso3: z.string().describe('ISO 3166-1 alpha-3 code, uppercase.'),
   status: z.string().describe('Humanitarian situation status.'),
   urlAlias: z.string().describe('Canonical ReliefWeb URL for this country page.'),
   profileOverview: z
@@ -56,6 +58,7 @@ const CountryFields = z.object({
         .object({
           title: z.string().describe('Link title.'),
           url: z.string().describe('Link URL.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('A curated key content link.'),
     )
@@ -69,6 +72,7 @@ const CountryFields = z.object({
           title: z.string().describe('Appeal or response plan title.'),
           url: z.string().describe('Link URL.'),
           date: z.string().optional().describe('Publication date.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('An appeal or response plan entry.'),
     )
@@ -81,6 +85,7 @@ const CountryFields = z.object({
         .object({
           title: z.string().describe('Link title.'),
           url: z.string().describe('Link URL.'),
+          reportId: CURATED_REPORT_ID,
         })
         .describe('A useful external link.'),
     )
@@ -97,23 +102,18 @@ const CountryOutput = z.object({
   archive: ARCHIVE_PAGE,
 });
 
+const notFoundMessage = (iso3: string) =>
+  `No country profile found for ISO3 code "${iso3}". Look up the code by country name with reliefweb_list_countries text, or browse the full listing there.`;
+
 export const reliefwebGetCountry = tool('reliefweb_get_country', {
   title: 'Get ReliefWeb Country Profile',
   description:
-    'Fetch a country profile from ReliefWeb by ISO3 code, including overview, humanitarian situation summary, ' +
-    'key content links, active appeals and response plans, and useful external links. ' +
-    'Country profiles are curated by OCHA editors and provide the authoritative situation summary for humanitarian responders. ' +
-    'Each curated list also has an archive — thousands of entries deep for a long-running crisis — which the profile leaves out. ' +
-    "Two alternative selectors, at most one per call: sections names parts of the profile to return, archive pages one list's archived entries in place of the profile. " +
-    'A profile over the response budget comes back as a section outline naming every section and its byte size. Nothing is truncated on any path.',
+    "Fetch a country profile from ReliefWeb by ISO3 code, including overview, humanitarian situation summary, key content links, active appeals and response plans, and useful external links. Country profiles are curated by OCHA editors and provide the authoritative situation summary for humanitarian responders. Each curated list also has an archive — thousands of entries deep for a long-running crisis — which the profile leaves out. Two alternative selectors, at most one per call: sections names parts of the profile to return, archive pages one list's archived entries in place of the profile. A profile over the response budget comes back as a section outline naming every section and its byte size. Nothing is truncated on any path.",
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
-    iso3: z
-      .string()
-      .length(3)
-      .describe(
-        "ISO 3166-1 alpha-3 country code (e.g., SYR, AFG, UKR). Used to look up the country's ReliefWeb profile.",
-      ),
+    iso3: iso3Input(
+      "ISO 3166-1 alpha-3 country code, three letters in any case (e.g., SYR, AFG, UKR). Used to look up the country's ReliefWeb profile; find a code by country name with reliefweb_list_countries text.",
+    ),
     sections: sectionsInput('country', SECTIONS_VS_ARCHIVE),
     archive: archiveInput('country'),
   }),
@@ -131,7 +131,7 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
       code: JsonRpcErrorCode.NotFound,
       when: 'No country profile found for the given ISO3 code.',
       recovery:
-        'Verify the ISO3 code is a valid ISO 3166-1 alpha-3 code (e.g., SYR, AFG, UKR). Use reliefweb_list_countries to browse available country codes.',
+        'Check the ISO3 code (e.g., SYR, AFG, UKR): look it up by country name with reliefweb_list_countries text (text: "Syria"), or browse the full listing there.',
     },
     {
       reason: 'selector_conflict',
@@ -143,7 +143,7 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
   ],
 
   async handler(input, ctx) {
-    const iso3 = input.iso3.trim().toUpperCase();
+    const iso3 = input.iso3.toUpperCase();
     if (input.archive && input.sections?.length) {
       throw ctx.fail('selector_conflict', SELECTOR_CONFLICT);
     }
@@ -162,12 +162,7 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
         ctx,
       );
       const found = await getReliefWebService().getCountryArchive(iso3, list, ctx);
-      if (!found) {
-        throw ctx.fail(
-          'not_found',
-          `No country profile found for ISO3 code "${iso3}". Verify the code is valid or use reliefweb_list_countries.`,
-        );
-      }
+      if (!found) throw ctx.fail('not_found', notFoundMessage(iso3));
       const { entries, ...identity } = found;
       return {
         ...identity,
@@ -177,12 +172,7 @@ export const reliefwebGetCountry = tool('reliefweb_get_country', {
     }
 
     const country = await getReliefWebService().getCountry(iso3, ctx);
-    if (!country) {
-      throw ctx.fail(
-        'not_found',
-        `No country profile found for ISO3 code "${iso3}". Verify the code is valid or use reliefweb_list_countries.`,
-      );
-    }
+    if (!country) throw ctx.fail('not_found', notFoundMessage(iso3));
     return documentOrOutline(country, input.sections, COUNTRY_IDENTITY);
   },
 

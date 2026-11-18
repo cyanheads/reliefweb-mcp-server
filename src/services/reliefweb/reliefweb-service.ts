@@ -16,12 +16,16 @@ import type {
   CountryArchive,
   CountryDetail,
   CountrySummary,
+  CuratedLink,
+  DatedCuratedLink,
+  DateRangeValue,
   DisasterArchive,
   DisasterDetail,
   DisasterSummary,
   FilterCondition,
   JobDetail,
   JobSummary,
+  LinkedDisaster,
   ProfileArchiveEntry,
   ProfileArchiveList,
   RawApiResponse,
@@ -39,6 +43,7 @@ import type {
   TrainingDetail,
   TrainingSummary,
 } from './types.js';
+import { TRAINING_DEFAULT_SORT } from './types.js';
 import { upstreamHttpError } from './upstream-errors.js';
 
 const BASE_URL = 'https://api.reliefweb.int/v2';
@@ -50,7 +55,12 @@ const REPORT_LIST_FIELDS = [
   'date.original',
   'date.created',
   'primary_country.name',
+  'primary_country.iso3',
   'country.name',
+  'country.iso3',
+  'disaster.id',
+  'disaster.name',
+  'disaster.glide',
   'source.shortname',
   'format.name',
   'theme.name',
@@ -68,7 +78,9 @@ const DISASTER_LIST_FIELDS = [
   'date.event',
   'date.created',
   'primary_country.name',
+  'primary_country.iso3',
   'country.name',
+  'country.iso3',
   'type.name',
   'primary_type.name',
   'url_alias',
@@ -81,6 +93,7 @@ const JOB_LIST_FIELDS = [
   'date.closing',
   'source.shortname',
   'country.name',
+  'country.iso3',
   'theme.name',
   'type.name',
   'career_categories.name',
@@ -98,6 +111,7 @@ const TRAINING_LIST_FIELDS = [
   'date.registration',
   'source.shortname',
   'country.name',
+  'country.iso3',
   'theme.name',
   'format.name',
   'language.code',
@@ -106,12 +120,6 @@ const TRAINING_LIST_FIELDS = [
 ];
 
 const SOURCE_LIST_FIELDS = ['id', 'name', 'shortname', 'type.name', 'url', 'homepage'];
-
-// Date range filter shape — separate from FilterCondition to keep the type honest.
-interface DateRangeValue {
-  from?: string;
-  to?: string;
-}
 
 export class ReliefWebService {
   // Config and storage reserved for future use (caching, rate limiting).
@@ -256,7 +264,31 @@ export class ReliefWebService {
     const value: DateRangeValue = {};
     if (from) value.from = from;
     if (to) value.to = to;
-    return { field, value } as FilterCondition;
+    return { field, value };
+  }
+
+  /**
+   * Builds the condition for a list of canonical vocabulary values: the value alone when
+   * there is one, else an array combined with `operator`, which must travel with it —
+   * ReliefWeb ORs an array that carries none.
+   */
+  private makeListFilter(field: string, values: string[], operator: 'AND' | 'OR'): FilterCondition {
+    return values.length === 1
+      ? { field, value: values[0] as string }
+      : { field, value: values, operator };
+  }
+
+  /**
+   * Content tagged with every listed country. The analyzed `country.iso3` drops English
+   * stopwords, so `ARE` (United Arab Emirates) and `AND` (Andorra) match nothing there; the
+   * un-analyzed `.exact` subfield matches every code, and it stores them lower-cased.
+   */
+  private countryFilter(codes: string[]): FilterCondition {
+    return this.makeListFilter(
+      'country.iso3.exact',
+      codes.map((code) => code.toLowerCase()),
+      'AND',
+    );
   }
 
   // ─── Reports ─────────────────────────────────────────────────────────────────
@@ -264,9 +296,11 @@ export class ReliefWebService {
   async searchReports(
     params: {
       text?: string;
-      country?: string;
+      /** ISO3 codes, uppercase; several match content tagged with every one. */
+      country?: string[];
       disasterId?: number;
       format?: string;
+      /** Canonical names, comma-joined; several match reports carrying every one. */
       theme?: string;
       language?: string;
       source?: string;
@@ -282,11 +316,17 @@ export class ReliefWebService {
     ctx.log.debug('searchReports', { params });
 
     const conditions: FilterCondition[] = [];
-    if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
+    if (params.country) conditions.push(this.countryFilter(params.country));
     if (params.disasterId !== undefined)
       conditions.push({ field: 'disaster.id', value: params.disasterId });
     if (params.format) conditions.push({ field: 'format.name', value: params.format });
-    if (params.theme) conditions.push({ field: 'theme.name', value: params.theme });
+    /**
+     * Whole tags on the `.exact` subfield: the analyzed `theme.name` matches each word of
+     * the value against any tag, so `Coordination` there also returns every report tagged
+     * Camp Coordination and Camp Management.
+     */
+    if (params.theme)
+      conditions.push(this.makeListFilter('theme.name.exact', params.theme.split(','), 'AND'));
     if (params.language) conditions.push({ field: 'language.code', value: params.language });
     if (params.source) conditions.push({ field: 'source.shortname', value: params.source });
     if (params.dateFrom || params.dateTo) {
@@ -329,7 +369,8 @@ export class ReliefWebService {
   async searchDisasters(
     params: {
       text?: string;
-      country?: string;
+      /** ISO3 codes, uppercase; several match content tagged with every one. */
+      country?: string[];
       disasterType?: string;
       status?: string;
       glide?: string;
@@ -345,7 +386,7 @@ export class ReliefWebService {
     ctx.log.debug('searchDisasters', { params });
 
     const conditions: FilterCondition[] = [];
-    if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
+    if (params.country) conditions.push(this.countryFilter(params.country));
     if (params.disasterType) conditions.push({ field: 'type.name', value: params.disasterType });
     if (params.status) {
       const values = params.status
@@ -409,7 +450,8 @@ export class ReliefWebService {
     ctx: Context,
   ): Promise<RawRecord<RawCountryFields> | null> {
     const query: ReliefWebQuery = {
-      filter: { field: 'iso3', value: iso3.toUpperCase() },
+      // The exact field, lower-cased as stored: the analyzed `iso3` drops ARE and AND as stopwords.
+      filter: { field: 'iso3.exact', value: iso3.toLowerCase() },
       profile: 'full',
       limit: 1,
     };
@@ -445,7 +487,7 @@ export class ReliefWebService {
   }
 
   async listCountries(
-    params: { crisisOnly?: boolean; limit?: number; offset?: number },
+    params: { text?: string; crisisOnly?: boolean; limit?: number; offset?: number },
     ctx: Context,
   ): Promise<{ items: CountrySummary[]; totalCount: number }> {
     ctx.log.debug('listCountries', { params });
@@ -463,6 +505,9 @@ export class ReliefWebService {
       limit: params.limit ?? 100,
       offset: params.offset ?? 0,
     };
+    if (params.text) {
+      query.query = { value: params.text, operator: 'AND', fields: ['name', 'shortname'] };
+    }
 
     const result = await this.post<RawCountryFields>('countries', query, ctx);
     return {
@@ -476,10 +521,15 @@ export class ReliefWebService {
   async searchJobs(
     params: {
       text?: string;
-      country?: string;
+      /** ISO3 codes, uppercase; several match content tagged with every one. */
+      country?: string[];
       source?: string;
+      /** Canonical names, comma-joined; several match postings carrying every one. */
       careerCategory?: string;
+      /** Canonical names, comma-joined; several match postings carrying every one. */
       theme?: string;
+      /** Canonical names, comma-joined; several match postings of any of those types. */
+      jobType?: string;
       experience?: string;
       sort?: string;
       includeArchived?: boolean;
@@ -491,11 +541,21 @@ export class ReliefWebService {
     ctx.log.debug('searchJobs', { params });
 
     const conditions: FilterCondition[] = [];
-    if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
+    if (params.country) conditions.push(this.countryFilter(params.country));
     if (params.source) conditions.push({ field: 'source.shortname', value: params.source });
     if (params.careerCategory)
-      conditions.push({ field: 'career_categories.name', value: params.careerCategory });
-    if (params.theme) conditions.push({ field: 'theme.name', value: params.theme });
+      conditions.push(
+        this.makeListFilter(
+          'career_categories.name.exact',
+          params.careerCategory.split(','),
+          'AND',
+        ),
+      );
+    if (params.theme)
+      conditions.push(this.makeListFilter('theme.name.exact', params.theme.split(','), 'AND'));
+    // Each type's words are its own, so the analyzed field already matches whole types.
+    if (params.jobType)
+      conditions.push(this.makeListFilter('type.name', params.jobType.split(','), 'OR'));
     if (params.experience) conditions.push({ field: 'experience.name', value: params.experience });
 
     const filter = this.buildAndFilter(conditions);
@@ -534,13 +594,20 @@ export class ReliefWebService {
       cost?: string;
       trainingLanguage?: string;
       text?: string;
-      country?: string;
+      /** ISO3 codes, uppercase; several match content tagged with every one. */
+      country?: string[];
       source?: string;
       format?: string;
+      /** Canonical names, comma-joined; several match listings carrying every one. */
       careerCategory?: string;
       language?: string;
       dateStartFrom?: string;
       dateStartTo?: string;
+      /**
+       * The default scope: listings starting at or after this bound, plus every listing with
+       * no start date. `dateStartFrom` stays a plain range, which leaves undated listings out.
+       */
+      upcomingOrUndatedFrom?: string;
       sort?: string;
       includeArchived?: boolean;
       limit?: number;
@@ -554,22 +621,40 @@ export class ReliefWebService {
     if (params.cost) conditions.push({ field: 'cost', value: params.cost });
     if (params.trainingLanguage)
       conditions.push({ field: 'training_language.code', value: params.trainingLanguage });
-    if (params.country) conditions.push({ field: 'country.iso3', value: params.country });
+    if (params.country) conditions.push(this.countryFilter(params.country));
     if (params.source) conditions.push({ field: 'source.shortname', value: params.source });
     if (params.format) conditions.push({ field: 'format.name', value: params.format });
     if (params.careerCategory)
-      conditions.push({ field: 'career_categories.name', value: params.careerCategory });
+      conditions.push(
+        this.makeListFilter(
+          'career_categories.name.exact',
+          params.careerCategory.split(','),
+          'AND',
+        ),
+      );
     if (params.language) conditions.push({ field: 'language.code', value: params.language });
     if (params.dateStartFrom || params.dateStartTo) {
       conditions.push(this.makeDateFilter('date.start', params.dateStartFrom, params.dateStartTo));
+    }
+    if (params.upcomingOrUndatedFrom) {
+      /**
+       * A range on date.start excludes every record without one — most current listings,
+       * nearly all of them online courses — so the default scope ORs in the missing case.
+       */
+      conditions.push({
+        operator: 'OR',
+        conditions: [
+          this.makeDateFilter('date.start', params.upcomingOrUndatedFrom, undefined),
+          { field: 'date.start', negate: true },
+        ],
+      });
     }
 
     const filter = this.buildAndFilter(conditions);
     const query: ReliefWebQuery = {
       fields: { include: TRAINING_LIST_FIELDS },
       ...(filter ? { filter } : {}),
-      // Soonest-starting first — the "upcoming training" purpose the tool documents.
-      sort: [params.sort ?? 'date.start:asc'],
+      sort: params.sort ? [params.sort] : [...TRAINING_DEFAULT_SORT],
       /** `latest` serves the current listings; the concluded ones live behind `analysis`. */
       preset: params.includeArchived ? 'analysis' : 'latest',
       limit: params.limit ?? 10,
@@ -643,22 +728,64 @@ export function getReliefWebService(): ReliefWebService {
 type LinkEntry = { title?: string; url?: string };
 type LinkWithDate = LinkEntry & { date?: string };
 
-function normalizeLinks(
-  items: Array<LinkEntry> | undefined,
-): Array<{ title: string; url: string }> | undefined {
-  const out = items?.flatMap((item) =>
-    item.title && item.url ? [{ title: item.title, url: item.url }] : [],
-  );
+/**
+ * Curated entries link to a report through its node URL, sometimes still carrying the
+ * editor's `/edit` suffix, and the node ID is the report ID. The match is whole and strict:
+ * a `/report/<country>/<slug>` alias also names a report, but only a lookup can say which.
+ */
+const REPORT_NODE_URL = /^https:\/\/reliefweb\.int\/node\/([1-9]\d*)(?:\/edit)?$/;
+
+/** The report ID a curated URL names, read from the URL and never looked up. */
+function reportIdFromUrl(url: string): number | undefined {
+  const digits = REPORT_NODE_URL.exec(url)?.[1];
+  if (digits === undefined) return;
+  const id = Number(digits);
+  return Number.isSafeInteger(id) ? id : undefined;
+}
+
+/**
+ * One curated entry, or none when it has no title or no URL — an entry that cannot be linked
+ * is not a retrievable entry. Every curated list, active or archived, is read through here.
+ */
+function curatedLink(item: LinkEntry): CuratedLink | undefined {
+  if (!item.title || !item.url) return;
+  const reportId = reportIdFromUrl(item.url);
+  return { title: item.title, url: item.url, ...(reportId === undefined ? {} : { reportId }) };
+}
+
+function datedCuratedLink(item: LinkWithDate): DatedCuratedLink | undefined {
+  const link = curatedLink(item);
+  return link && item.date ? { ...link, date: item.date } : link;
+}
+
+function normalizeLinks(items: LinkEntry[] | undefined): CuratedLink[] | undefined {
+  const out = items?.flatMap((item) => curatedLink(item) ?? []);
   return out?.length ? out : undefined;
 }
 
-function normalizeDatedLinks(
-  items: Array<LinkWithDate> | undefined,
-): Array<{ title: string; url: string; date?: string }> | undefined {
-  const out = items?.flatMap((item) => {
-    if (!item.title || !item.url) return [];
-    return [{ title: item.title, url: item.url, ...(item.date ? { date: item.date } : {}) }];
-  });
+function normalizeDatedLinks(items: LinkWithDate[] | undefined): DatedCuratedLink[] | undefined {
+  const out = items?.flatMap((item) => datedCuratedLink(item) ?? []);
+  return out?.length ? out : undefined;
+}
+
+/**
+ * Uppercased ISO3 codes of a country list, or none when no entry carries one. ReliefWeb sends
+ * them lowercase; every country input and every code this server returns is uppercase.
+ */
+function iso3Codes(countries: Array<{ iso3?: string }> | undefined): string[] | undefined {
+  const codes = countries?.flatMap((c) => (c.iso3 ? [c.iso3.toUpperCase()] : []));
+  return codes?.length ? codes : undefined;
+}
+
+/**
+ * The disasters a report is tagged with, in the form `reliefweb_get_disaster` and the
+ * `disaster_id` filter take. Their status is the disaster record's to report; an entry with no
+ * ID or no name gives the caller nothing to follow, so it is dropped.
+ */
+function linkedDisasters(raw: RawReportFields['disaster']): LinkedDisaster[] | undefined {
+  const out = raw?.flatMap((d) =>
+    d.id && d.name ? [{ id: d.id, name: d.name, ...(d.glide ? { glide: d.glide } : {}) }] : [],
+  );
   return out?.length ? out : undefined;
 }
 
@@ -670,20 +797,16 @@ const ARCHIVE_RAW_KEY = {
 } as const satisfies Record<ProfileArchiveList, keyof NonNullable<RawCountryFields['profile']>>;
 
 /**
- * Every archived entry of one curated list, in ReliefWeb's own archive order. Entries
- * missing a title or a URL are dropped, same rule the active half goes through — an entry
- * that cannot be linked is not a retrievable entry. Country and disaster profiles carry the
- * identical sub-object shape, so one function serves both.
+ * Every archived entry of one curated list, in ReliefWeb's own archive order, read by the
+ * same rule as the active half. Country and disaster profiles carry the identical sub-object
+ * shape, so one function serves both.
  */
 function profileArchiveEntries(
   profile: RawCountryFields['profile'] | RawDisasterFields['profile'],
   list: ProfileArchiveList,
 ): ProfileArchiveEntry[] {
-  const raw: Array<LinkWithDate> = profile?.[ARCHIVE_RAW_KEY[list]]?.archive ?? [];
-  return raw.flatMap((item) => {
-    if (!item.title || !item.url) return [];
-    return [{ title: item.title, url: item.url, ...(item.date ? { date: item.date } : {}) }];
-  });
+  const raw: LinkWithDate[] = profile?.[ARCHIVE_RAW_KEY[list]]?.archive ?? [];
+  return raw.flatMap((item) => datedCuratedLink(item) ?? []);
 }
 
 function normalizeReportSummary(f: RawReportFields, id: number): ReportSummary {
@@ -691,7 +814,12 @@ function normalizeReportSummary(f: RawReportFields, id: number): ReportSummary {
   if (f.date?.original) r.dateOriginal = f.date.original;
   if (f.date?.created) r.dateCreated = f.date.created;
   if (f.primary_country?.name) r.primaryCountry = f.primary_country.name;
+  if (f.primary_country?.iso3) r.primaryCountryIso3 = f.primary_country.iso3.toUpperCase();
   if (f.country?.length) r.countries = f.country.map((c) => c.name ?? '').filter(Boolean);
+  const countryIso3s = iso3Codes(f.country);
+  if (countryIso3s) r.countryIso3s = countryIso3s;
+  const disasters = linkedDisasters(f.disaster);
+  if (disasters) r.disasters = disasters;
   if (f.source?.length)
     r.sources = f.source.map((s) => s.shortname ?? s.name ?? '').filter(Boolean);
   if (f.format?.length) r.formats = f.format.map((x) => x.name ?? '').filter(Boolean);
@@ -716,7 +844,10 @@ function normalizeDisasterSummary(f: RawDisasterFields, id: number): DisasterSum
   if (f.date?.event) r.dateEvent = f.date.event;
   if (f.date?.created) r.dateCreated = f.date.created;
   if (f.primary_country?.name) r.primaryCountry = f.primary_country.name;
+  if (f.primary_country?.iso3) r.primaryCountryIso3 = f.primary_country.iso3.toUpperCase();
   if (f.country?.length) r.countries = f.country.map((c) => c.name ?? '').filter(Boolean);
+  const countryIso3s = iso3Codes(f.country);
+  if (countryIso3s) r.countryIso3s = countryIso3s;
   if (f.type?.length) r.types = f.type.map((t) => t.name ?? '').filter(Boolean);
   if (f.primary_type?.name) r.primaryType = f.primary_type.name;
   if (f.url_alias) r.urlAlias = f.url_alias;
@@ -726,7 +857,15 @@ function normalizeDisasterSummary(f: RawDisasterFields, id: number): DisasterSum
 function normalizeDisasterDetail(f: RawDisasterFields, id: number): DisasterDetail {
   const r: DisasterDetail = { ...normalizeDisasterSummary(f, id) };
   if (f.description) r.description = f.description;
-  if (f.profile?.overview) r.profileOverview = f.profile.overview;
+  /**
+   * Most disasters store the overview as a byte-identical copy of the description; the rest
+   * store it as a prefix the description extends with legacy link lists. A copy is flagged
+   * rather than repeated, so it costs neither response bytes nor outline budget. A prefix is
+   * kept whole: the record carries no offset to split the description at.
+   */
+  const overview = f.profile?.overview;
+  if (overview && overview === f.description) r.profileOverviewSameAsDescription = true;
+  else if (overview) r.profileOverview = overview;
   // Active set only — drop the archive half (see normalizeCountryDetail for the rationale).
   const kc = normalizeLinks(f.profile?.key_content?.active);
   if (kc) r.keyContent = kc;
@@ -739,7 +878,7 @@ function normalizeDisasterDetail(f: RawDisasterFields, id: number): DisasterDeta
 
 function normalizeCountrySummary(f: RawCountryFields, id: number): CountrySummary {
   const r: CountrySummary = { id: f.id ?? id, name: f.name ?? '(unnamed)' };
-  if (f.iso3) r.iso3 = f.iso3;
+  if (f.iso3) r.iso3 = f.iso3.toUpperCase();
   if (f.status) r.status = f.status;
   if (f.url_alias) r.urlAlias = f.url_alias;
   return r;
@@ -769,6 +908,8 @@ function normalizeJobSummary(f: RawJobFields, id: number): JobSummary {
   if (f.source?.length)
     r.sources = f.source.map((s) => s.shortname ?? s.name ?? '').filter(Boolean);
   if (f.country?.length) r.countries = f.country.map((c) => c.name ?? '').filter(Boolean);
+  const countryIso3s = iso3Codes(f.country);
+  if (countryIso3s) r.countryIso3s = countryIso3s;
   if (f.theme?.length) r.themes = f.theme.map((t) => t.name ?? '').filter(Boolean);
   if (f.type?.length) r.types = f.type.map((t) => t.name ?? '').filter(Boolean);
   if (f.career_categories?.length)
@@ -801,6 +942,8 @@ function normalizeTrainingSummary(f: RawTrainingFields, id: number): TrainingSum
   if (f.source?.length)
     r.sources = f.source.map((s) => s.shortname ?? s.name ?? '').filter(Boolean);
   if (f.country?.length) r.countries = f.country.map((c) => c.name ?? '').filter(Boolean);
+  const countryIso3s = iso3Codes(f.country);
+  if (countryIso3s) r.countryIso3s = countryIso3s;
   if (f.theme?.length) r.themes = f.theme.map((t) => t.name ?? '').filter(Boolean);
   if (f.format?.length) r.formats = f.format.map((x) => x.name ?? '').filter(Boolean);
   if (f.language?.length) r.languages = f.language.map((l) => l.code ?? '').filter(Boolean);

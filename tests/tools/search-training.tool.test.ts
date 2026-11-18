@@ -160,19 +160,26 @@ describe('reliefwebSearchTraining', () => {
 
   it('populates notice enrichment when no training matches', async () => {
     mockSearchTraining.mockResolvedValue({ items: [], totalCount: 0 });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-06T12:34:56.789Z'));
+    try {
+      const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
+      const input = reliefwebSearchTraining.input.parse({
+        text: 'zzznomatch',
+        format: 'online',
+      });
+      const result = await reliefwebSearchTraining.handler(input, ctx);
 
-    const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
-    const input = reliefwebSearchTraining.input.parse({
-      text: 'zzznomatch',
-      format: 'online',
-    });
-    const result = await reliefwebSearchTraining.handler(input, ctx);
-
-    expect(result.items).toHaveLength(0);
-    const enrichment = getEnrichment(ctx);
-    expect(enrichment.totalCount).toBe(0);
-    expect(enrichment.notice).toBeDefined();
-    expect(enrichment.notice).toContain('zzznomatch');
+      expect(result.items).toHaveLength(0);
+      const enrichment = getEnrichment(ctx);
+      expect(enrichment.totalCount).toBe(0);
+      // format is an enum, so a misspelled value never gets this far: the advice omits it.
+      expect(enrichment.notice).toBe(
+        'No training matched text="zzznomatch", format="online", start_from=2026-08-06T12:34:56+00:00 or no start date. Try broader keywords, widen or remove the date range, remove the cost or training_language filter, or set include_archived=true to search concluded listings as well.',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('empty-result notice echoes source, career_category, language, and date_start_to', async () => {
@@ -204,7 +211,7 @@ describe('reliefwebSearchTraining', () => {
     expect(result.appliedFilters).toMatchObject({
       country: 'SOM',
       format: 'online',
-      sort: 'date.start:asc',
+      sort: 'date.start:asc,date.created:desc',
       limit: 10,
       offset: 0,
     });
@@ -323,9 +330,9 @@ describe('reliefwebSearchTraining', () => {
   });
 });
 
-// ─── Issue #17: unbounded searches default to upcoming starts ────────────────
+// ─── Issues #17, #37: unbounded searches default to upcoming or undated ──────
 
-describe('reliefwebSearchTraining — default upcoming-start window', () => {
+describe('reliefwebSearchTraining — default scope: upcoming starts plus undated listings', () => {
   const NOW = new Date('2026-08-06T12:34:56.789Z');
   const NOW_BOUND = '2026-08-06T12:34:56+00:00';
 
@@ -340,44 +347,54 @@ describe('reliefwebSearchTraining — default upcoming-start window', () => {
     vi.useRealTimers();
   });
 
-  it('applies a current-timestamp lower bound when neither date bound is supplied', async () => {
+  it('applies the current-timestamp default scope, not a plain lower bound, when neither date bound is supplied', async () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ limit: 5 });
     await reliefwebSearchTraining.handler(input, ctx);
 
     expect(mockSearchTraining).toHaveBeenCalledWith(
-      expect.objectContaining({ dateStartFrom: NOW_BOUND }),
+      expect.objectContaining({ upcomingOrUndatedFrom: NOW_BOUND }),
       ctx,
     );
+    expect(mockSearchTraining.mock.calls[0]![0]).not.toHaveProperty('dateStartFrom');
   });
 
-  it('echoes the injected bound in appliedFilters and in content[]', async () => {
+  it('echoes the injected bound and the undated half of the scope in appliedFilters and in content[]', async () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({});
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
     expect(result.appliedFilters.dateStartFrom).toBe(NOW_BOUND);
+    expect(result.appliedFilters.undatedIncluded).toBe(true);
     const text = (reliefwebSearchTraining.format!(result)[0] as { text: string }).text;
     expect(text).toContain(`dateStartFrom=${NOW_BOUND}`);
+    expect(text).toContain('undatedIncluded=true');
   });
 
-  it('injects no lower bound when the caller supplied only an upper bound', async () => {
+  it('applies no default scope when the caller supplied only an upper bound', async () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({
       date_start_to: '2025-12-31T23:59:59+00:00',
     });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
-    expect(mockSearchTraining.mock.calls[0]![0]).not.toHaveProperty('dateStartFrom');
+    const params = mockSearchTraining.mock.calls[0]![0];
+    expect(params).not.toHaveProperty('dateStartFrom');
+    expect(params).not.toHaveProperty('upcomingOrUndatedFrom');
     expect(result.appliedFilters).not.toHaveProperty('dateStartFrom');
+    expect(result.appliedFilters).not.toHaveProperty('undatedIncluded');
   });
 
-  it('leaves an explicit lower bound alone', async () => {
+  it('leaves an explicit lower bound alone, as a plain range without the undated half', async () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ date_start_from: '2020-01-01' });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
+    const params = mockSearchTraining.mock.calls[0]![0];
+    expect(params).toHaveProperty('dateStartFrom', '2020-01-01T00:00:00+00:00');
+    expect(params).not.toHaveProperty('upcomingOrUndatedFrom');
     expect(result.appliedFilters.dateStartFrom).toBe('2020-01-01T00:00:00+00:00');
+    expect(result.appliedFilters).not.toHaveProperty('undatedIncluded');
   });
 });
 
@@ -416,7 +433,7 @@ describe('reliefwebSearchTraining — date normalization', () => {
     );
   });
 
-  it('accepts blank date bounds from form-based clients and still defaults to upcoming', async () => {
+  it('accepts blank date bounds from form-based clients and still applies the default scope', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-06T12:34:56.789Z'));
     try {
@@ -424,7 +441,12 @@ describe('reliefwebSearchTraining — date normalization', () => {
       const input = reliefwebSearchTraining.input.parse({ date_start_from: '', date_start_to: '' });
       const result = await reliefwebSearchTraining.handler(input, ctx);
 
+      expect(mockSearchTraining.mock.calls[0]![0]).toHaveProperty(
+        'upcomingOrUndatedFrom',
+        '2026-08-06T12:34:56+00:00',
+      );
       expect(result.appliedFilters.dateStartFrom).toBe('2026-08-06T12:34:56+00:00');
+      expect(result.appliedFilters.undatedIncluded).toBe(true);
       expect(result.appliedFilters).not.toHaveProperty('dateStartTo');
     } finally {
       vi.useRealTimers();
@@ -496,14 +518,16 @@ describe('reliefwebSearchTraining — include_archived', () => {
     expect(result.appliedFilters.preset).toBe('latest');
   });
 
-  it('drops the start-from-now bound, which would hide the archive it just unlocked', async () => {
+  it('drops the default scope, whose start-from-now half would hide the archive it just unlocked', async () => {
     const ctx = createMockContext({ errors: reliefwebSearchTraining.errors });
     const input = reliefwebSearchTraining.input.parse({ include_archived: true });
     const result = await reliefwebSearchTraining.handler(input, ctx);
 
     const params = mockSearchTraining.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(params).not.toHaveProperty('dateStartFrom');
+    expect(params).not.toHaveProperty('upcomingOrUndatedFrom');
     expect(result.appliedFilters.dateStartFrom).toBeUndefined();
+    expect(result.appliedFilters).not.toHaveProperty('undatedIncluded');
   });
 
   it('honors an explicit lower bound even with the archive on', async () => {
@@ -523,5 +547,36 @@ describe('reliefwebSearchTraining — include_archived', () => {
     await reliefwebSearchTraining.handler(input, ctx);
 
     expect(getEnrichment(ctx).notice).toContain('include_archived=true');
+  });
+});
+
+// ─── Identifiers for the next call ───────────────────────────────────────────
+
+describe('reliefwebSearchTraining — ISO3 codes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries them onto structuredContent and content[] beside the country names', async () => {
+    mockSearchTraining.mockResolvedValue({
+      totalCount: 1,
+      items: [
+        {
+          id: 4188583,
+          title: 'Security Risk Management Training',
+          countries: ['Sudan', 'South Sudan'],
+          countryIso3s: ['SDN', 'SSD'],
+        },
+      ],
+    });
+
+    const result = await runToolContract(reliefwebSearchTraining, {});
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ items: [{ countryIso3s: ['SDN', 'SSD'] }] });
+    const text = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    expect(text).toContain('**Country ISO3 codes:** SDN, SSD');
   });
 });

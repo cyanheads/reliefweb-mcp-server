@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline, markdownLink } from '@cyanheads/mcp-ts-core/utils';
+import { countryCodesInput, parseCountryCodes } from '@/mcp-server/tools/country-codes.js';
 import { limitSchema, resolveLimit, SEARCH_MAX_LIMIT } from '@/mcp-server/tools/limits.js';
 import { pagedPastEndNotice } from '@/mcp-server/tools/pagination.js';
 import { renderPlainTextNotice } from '@/mcp-server/tools/plain-text-notice.js';
@@ -30,22 +31,14 @@ import {
 export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
   title: 'Search ReliefWeb Disasters',
   description:
-    'Search active and historical disasters on ReliefWeb by type, country, status, date range, and GLIDE number. ' +
-    'Default preset covers alert, ongoing, and past disasters. ' +
-    'Use include_archived=true to reach alert-archive entries as well, for historical research. ' +
-    'Returns IDs suitable for use with reliefweb_get_disaster and as disaster_id filter in reliefweb_search_reports.',
+    'Search active and historical disasters on ReliefWeb by type, country, status, date range, and GLIDE number. Default preset covers alert, ongoing, and past disasters. Use include_archived=true to reach alert-archive entries as well, for historical research. Returns IDs suitable for use with reliefweb_get_disaster and as disaster_id filter in reliefweb_search_reports.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({
     text: z
       .string()
       .optional()
       .describe('Full-text search query. Matches against disaster name and description.'),
-    country: z
-      .string()
-      .optional()
-      .describe(
-        'ISO 3166-1 alpha-3 country code (e.g., SYR, AFG, UKR). Filters to disasters tagged with this country.',
-      ),
+    country: countryCodesInput('disasters'),
     disaster_type: z
       .string()
       .optional()
@@ -133,10 +126,22 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
             dateEvent: z.string().optional().describe('Event date (ISO 8601), when available.'),
             dateCreated: z.string().optional().describe('ReliefWeb index date (ISO 8601).'),
             primaryCountry: z.string().optional().describe('Primary affected country.'),
+            primaryCountryIso3: z
+              .string()
+              .optional()
+              .describe(
+                'Uppercase ISO3 code of the primary affected country — the form the country filters and reliefweb_get_country take.',
+              ),
             countries: z
               .array(z.string())
               .optional()
               .describe('All countries tagged on this disaster.'),
+            countryIso3s: z
+              .array(z.string())
+              .optional()
+              .describe(
+                'Uppercase ISO3 codes of the countries tagged on this disaster — the form the country filters and reliefweb_get_country take.',
+              ),
             types: z.array(z.string()).optional().describe('Disaster type names.'),
             primaryType: z.string().optional().describe('Primary disaster type.'),
             urlAlias: z.string().optional().describe('Canonical ReliefWeb URL for this disaster.'),
@@ -147,7 +152,10 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
     appliedFilters: z
       .object({
         text: z.string().optional().describe('Full-text query the search used.'),
-        country: z.string().optional().describe('Country code as normalized (uppercased ISO3).'),
+        country: z
+          .string()
+          .optional()
+          .describe('Country codes as normalized: uppercased ISO3, comma-separated when several.'),
         disasterType: z.string().optional().describe('Disaster type name filter applied.'),
         status: z
           .string()
@@ -225,7 +233,8 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       limit: input.limit,
     });
 
-    const country = input.country?.trim() ? input.country.toUpperCase() : undefined;
+    const countryCodes = parseCountryCodes(input.country);
+    const country = countryCodes?.join(',');
     const resolveBound = (field: 'date_from' | 'date_to', bound: 'from' | 'to') => {
       try {
         return resolveDateBound(input[field], bound);
@@ -268,7 +277,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       .searchDisasters(
         {
           ...(input.text?.trim() ? { text: input.text } : {}),
-          ...(country ? { country } : {}),
+          ...(countryCodes ? { country: countryCodes } : {}),
           ...(input.disaster_type?.trim() ? { disasterType: input.disaster_type } : {}),
           ...(status.value ? { status: status.value } : {}),
           ...(input.glide?.trim() ? { glide: input.glide } : {}),
@@ -316,8 +325,7 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       if (dateFrom) filters.push(`date_from=${dateFrom}`);
       if (dateTo) filters.push(`date_to=${dateTo}`);
       notice(
-        `No disasters matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. ` +
-          'Try removing filters, using different disaster type names, or setting include_archived=true for historical data.',
+        `No disasters matched ${filters.length > 0 ? filters.join(', ') : 'the given filters'}. Try removing filters, using different disaster type names, or setting include_archived=true for historical data.`,
       );
     }
 
@@ -338,8 +346,12 @@ export const reliefwebSearchDisasters = tool('reliefweb_search_disasters', {
       if (item.dateCreated) lines.push(`**Indexed:** ${escapeMarkdownInline(item.dateCreated)}`);
       if (item.primaryCountry)
         lines.push(`**Primary country:** ${escapeMarkdownInline(item.primaryCountry)}`);
+      if (item.primaryCountryIso3)
+        lines.push(`**Primary country ISO3:** ${escapeMarkdownInline(item.primaryCountryIso3)}`);
       if (item.countries?.length)
         lines.push(`**Countries:** ${escapeMarkdownInline(item.countries.join(', '))}`);
+      if (item.countryIso3s?.length)
+        lines.push(`**Country ISO3 codes:** ${escapeMarkdownInline(item.countryIso3s.join(', '))}`);
       if (item.urlAlias) lines.push(`**URL:** ${markdownLink(item.urlAlias, item.urlAlias)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
