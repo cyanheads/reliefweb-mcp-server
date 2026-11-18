@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-11-17 · ⚠️ Breaking
+
+Exact theme, career-category, and country filters; linked record identifiers; undated training listings
+
 ## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-10-26
 
 Humanitarian research guidance and reliable ReliefWeb queries
